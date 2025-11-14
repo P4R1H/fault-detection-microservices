@@ -354,9 +354,10 @@ class GrangerLassoRCA:
             # Create lagged features
             X_lagged = []
             for lag in range(1, self.max_lag + 1):
-                X_lagged.append(data_std[:-lag, :])  # All vars at lag
+                # Slice to ensure all arrays have same length (n - max_lag)
+                X_lagged.append(data_std[self.max_lag - lag : -lag, :])
 
-            # Stack lagged features
+            # Stack lagged features: current + lag-1 + lag-2 + ... + lag-max_lag
             X = np.hstack([data_std[self.max_lag:, :]] + X_lagged[::-1])
             y = data_std[self.max_lag:, target_idx]
 
