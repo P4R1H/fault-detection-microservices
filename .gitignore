@@ -61,10 +61,15 @@ logs/
 *.ckpt
 *.safetensors
 
-# Experiments
+# Experiments and results
 experiments/
 wandb/
 mlruns/
+
+# Workspace tracking (keep tracked, but ignore temp files)
+.workspace/experiments/
+.workspace/*.tmp
+.workspace/*.bak
 
 # Cache
 .cache/
@@ -76,8 +81,13 @@ Thumbs.db
 
 # Project specific
 project/data/
+project/outputs/
 project/experiments/
 project/models/
 project/checkpoints/
 project/logs/
 project/wandb/
+
+# Config overrides (keep defaults tracked)
+project/config/*_override.yaml
+project/config/local_*.yaml

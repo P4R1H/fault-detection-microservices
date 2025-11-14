@@ -18,31 +18,46 @@ This project implements a comprehensive multimodal AIOps system for microservice
 ## Project Structure
 
 ```
-/project
-├── /data                    # RCAEval TrainTicket dataset
-├── /src                     # Source code
-│   ├── /metrics_module      # Time-series anomaly detection
-│   ├── /logs_module         # Log parsing and analysis
-│   ├── /traces_module       # Service graph + GNN
-│   ├── /causal_module       # PCMCI causal inference
-│   ├── /fusion_module       # Multimodal fusion
-│   ├── /baselines           # Baseline implementations
-│   ├── /models              # Shared model components
-│   └── /utils               # Common utilities
-├── /experiments             # Experimental results
-├── /docs                    # Academic documentation
-│   ├── final_report.md
-│   ├── architecture.md
-│   ├── literature_review.md
-│   ├── methodology.md
-│   ├── results.md
-│   ├── ablations.md
-│   └── experiments.md
-└── /context                 # Project memory (internal)
-    ├── memory.md
-    ├── task_list.md
-    ├── decisions.md
-    └── notes.md
+/fault-detection-microservices
+├── .workspace/              # Working memory & tracking (NOT in docs/)
+│   ├── memory.md            # Long-term project understanding
+│   ├── context.md           # Current session tracking
+│   ├── todo.md              # Task management
+│   ├── decisions.md         # Decision log
+│   └── notes.md             # Scratch space
+├── reference/               # Academic references & archived docs
+│   ├── literature-review.txt
+│   ├── midsem-report.txt
+│   └── research-results.txt
+├── project/                 # Main codebase
+│   ├── config/              # YAML configurations
+│   │   ├── model_config.yaml
+│   │   ├── experiment_config.yaml
+│   │   └── data_config.yaml
+│   ├── docs/                # FORMAL DOCUMENTATION ONLY
+│   │   ├── MODULE_INTERFACES.md
+│   │   └── PHASE2_SETUP.md
+│   ├── src/                 # Source code
+│   │   ├── data/            # Data loading & preprocessing
+│   │   ├── encoders/        # Metrics, Logs, Traces encoders
+│   │   ├── causal/          # PCMCI causal discovery
+│   │   ├── fusion/          # Multimodal fusion
+│   │   ├── models/          # RCA models
+│   │   ├── evaluation/      # Metrics & ablations
+│   │   ├── baselines/       # Statistical baselines
+│   │   └── utils/           # General utilities
+│   ├── scripts/             # Executable scripts
+│   ├── tests/               # Test suite
+│   ├── experiments/         # Experiment runners (gitignored)
+│   ├── outputs/             # Results (gitignored)
+│   │   ├── models/
+│   │   ├── results/
+│   │   ├── figures/
+│   │   └── logs/
+│   ├── setup.py             # Package installation
+│   └── requirements.txt
+└── data/                    # Local datasets (gitignored)
+    └── RCAEval/
 ```
 
 ## Quick Start
