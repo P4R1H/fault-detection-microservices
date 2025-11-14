@@ -25,10 +25,7 @@ try:
 except ImportError as import_err:
     TIGRAMITE_AVAILABLE = False
     _TIGRAMITE_IMPORT_ERROR = import_err
-    warnings.warn(
-        "tigramite not installed. PCMCI causal discovery unavailable. "
-        "Install with: pip install tigramite"
-    )
+    # Don't warn on import - only raise error when trying to use the class
 
 
 class PCMCIDiscovery:
