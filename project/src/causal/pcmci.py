@@ -359,8 +359,9 @@ class GrangerLassoRCA:
 
         # Suppress sklearn convergence warnings (we use high max_iter)
         with warn.catch_warnings():
-            warn.filterwarnings('ignore', category=warn.UserWarning)
-            warn.filterwarnings('ignore', message='Objective did not converge')
+            warn.filterwarnings('ignore', category=UserWarning)
+            warn.filterwarnings('ignore', category=FutureWarning)
+            warn.simplefilter('ignore')
 
             # For each variable, fit Lasso regression
             for target_idx in range(n_vars):
