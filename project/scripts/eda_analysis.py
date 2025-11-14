@@ -365,9 +365,9 @@ def main():
     parser.add_argument('--all', action='store_true', help='Analyze all systems')
     parser.add_argument('--systems', nargs='+', choices=['TrainTicket', 'SockShop', 'OnlineBoutique'],
                         help='Specific systems to analyze')
-    parser.add_argument('--data-dir', type=str, default='project/data/RCAEval',
+    parser.add_argument('--data-dir', type=str, default='data/RCAEval',
                         help='Path to RCAEval dataset')
-    parser.add_argument('--output-dir', type=str, default='project/outputs/eda',
+    parser.add_argument('--output-dir', type=str, default='outputs/eda',
                         help='Output directory for analysis results')
 
     args = parser.parse_args()
