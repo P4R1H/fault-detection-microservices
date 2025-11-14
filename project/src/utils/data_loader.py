@@ -1,10 +1,11 @@
 """
-RCAEval Data Loader - Robust Version
+RCAEval Data Loader - Lazy Loading Version
 
-Handles the actual RCAEval dataset structure:
-- Double nesting: RE2/RE2-TT/, RE1/RE1-OB/, etc.
-- Inconsistent filenames: metrics.csv (RE2/RE3) vs data.csv (RE1)
-- Labels encoded in folder names: {service}_{fault}/1/
+Handles the actual RCAEval dataset structure with LAZY LOADING:
+- Scans directories and parses labels WITHOUT loading CSVs
+- Stores file paths instead of DataFrames
+- Loads data on-demand via .load_data() method
+- Supports selective loading (metrics only, logs only, etc.)
 
 Example paths:
   data/RCAEval/TrainTicket/RE2/RE2-TT/ts-auth-service_cpu/1/metrics.csv
@@ -16,23 +17,33 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import pandas as pd
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import Counter
 
 
 @dataclass
 class FailureCase:
-    """Single failure case from RCAEval dataset"""
+    """
+    Single failure case from RCAEval dataset (LAZY LOADING)
+
+    Data is NOT loaded on initialization - only file paths are stored.
+    Call .load_data() to actually read CSVs into memory.
+    """
     case_id: str
     system: str  # 'TrainTicket', 'SockShop', 'OnlineBoutique'
     fault_type: str  # 'CPU', 'MEM', 'DISK', 'SOCKET', 'DELAY', 'LOSS'
     root_cause_service: str
     root_cause_indicator: str
 
-    # Data modalities
-    metrics: Optional[pd.DataFrame] = None
-    logs: Optional[pd.DataFrame] = None
-    traces: Optional[pd.DataFrame] = None
+    # File paths (always available)
+    metrics_path: Optional[Path] = None
+    logs_path: Optional[Path] = None
+    traces_path: Optional[Path] = None
+
+    # Data modalities (loaded on-demand, initially None)
+    metrics: Optional[pd.DataFrame] = field(default=None, repr=False)
+    logs: Optional[pd.DataFrame] = field(default=None, repr=False)
+    traces: Optional[pd.DataFrame] = field(default=None, repr=False)
 
     # Metadata
     re_version: Optional[str] = None  # RE1, RE2, or RE3
@@ -40,12 +51,85 @@ class FailureCase:
     timestamp: Optional[pd.Timestamp] = None
     duration_minutes: Optional[int] = None
 
+    def load_data(
+        self,
+        metrics: bool = True,
+        logs: bool = True,
+        traces: bool = True,
+        verbose: bool = False
+    ) -> 'FailureCase':
+        """
+        Load data from CSV files into memory (LAZY LOADING)
+
+        Args:
+            metrics: Load metrics.csv
+            logs: Load logs.csv
+            traces: Load traces.csv
+            verbose: Print loading progress
+
+        Returns:
+            Self (for chaining)
+        """
+        if verbose:
+            print(f"Loading {self.case_id}...")
+
+        # Load metrics
+        if metrics and self.metrics_path is not None and self.metrics is None:
+            try:
+                self.metrics = pd.read_csv(self.metrics_path)
+                if verbose:
+                    print(f"  ✅ Metrics: {self.metrics.shape}")
+            except Exception as e:
+                if verbose:
+                    print(f"  ❌ Metrics error: {e}")
+
+        # Load logs
+        if logs and self.logs_path is not None and self.logs is None:
+            try:
+                self.logs = pd.read_csv(self.logs_path)
+                if verbose:
+                    print(f"  ✅ Logs: {len(self.logs)} entries")
+            except Exception as e:
+                if verbose:
+                    print(f"  ❌ Logs error: {e}")
+
+        # Load traces
+        if traces and self.traces_path is not None and self.traces is None:
+            try:
+                self.traces = pd.read_csv(self.traces_path)
+                if verbose:
+                    print(f"  ✅ Traces: {len(self.traces)} spans")
+            except Exception as e:
+                if verbose:
+                    print(f"  ❌ Traces error: {e}")
+
+        return self
+
+    def unload_data(self):
+        """Free memory by unloading DataFrames"""
+        self.metrics = None
+        self.logs = None
+        self.traces = None
+
+    def has_metrics(self) -> bool:
+        """Check if metrics file exists"""
+        return self.metrics_path is not None and self.metrics_path.exists()
+
+    def has_logs(self) -> bool:
+        """Check if logs file exists"""
+        return self.logs_path is not None and self.logs_path.exists()
+
+    def has_traces(self) -> bool:
+        """Check if traces file exists"""
+        return self.traces_path is not None and self.traces_path.exists()
+
 
 class RCAEvalDataLoader:
     """
-    Robust data loader for RCAEval benchmark dataset
+    Robust LAZY data loader for RCAEval benchmark dataset
 
-    Handles actual dataset structure with:
+    Key features:
+    - LAZY LOADING: Only scans directories, doesn't load CSVs until requested
     - Recursive discovery of failure cases
     - Dynamic label parsing from folder names
     - Multiple metric filename formats
@@ -53,11 +137,18 @@ class RCAEvalDataLoader:
 
     Usage:
         loader = RCAEvalDataLoader(data_dir='data/RCAEval')
-        cases = loader.load_all_cases()
-        train, val, test = loader.load_splits(train_ratio=0.6, val_ratio=0.2)
+        cases = loader.load_all_cases()  # Fast - only scans directories
+
+        # Load data for specific case
+        case = cases[0]
+        case.load_data(metrics=True, traces=False)  # Only load what you need
+
+        # Process and unload
+        process(case.metrics)
+        case.unload_data()  # Free memory
     """
 
-    # Fault code mappings (observed in SockShop dataset)
+    # Fault code mappings
     FAULT_CODE_MAP = {
         'cpu': 'CPU',
         'mem': 'MEM',
@@ -67,7 +158,7 @@ class RCAEvalDataLoader:
         'loss': 'LOSS',
         'packet_loss': 'LOSS',
         'socket': 'SOCKET',
-        # SockShop specific codes
+        # SockShop/RE3 specific codes
         'f1': 'CPU',
         'f2': 'MEM',
         'f3': 'DISK',
@@ -96,16 +187,22 @@ class RCAEvalDataLoader:
                 f"Please run: python scripts/download_dataset.py --all"
             )
 
-    def load_all_cases(self, systems: List[str] = None, re_versions: List[str] = None) -> List[FailureCase]:
+    def load_all_cases(
+        self,
+        systems: List[str] = None,
+        re_versions: List[str] = None,
+        verbose: bool = True
+    ) -> List[FailureCase]:
         """
-        Load all failure cases from specified systems
+        Discover all failure cases (LAZY - doesn't load CSVs)
 
         Args:
             systems: List of system names to load (default: all)
             re_versions: List of RE versions to load (default: all)
+            verbose: Print progress
 
         Returns:
-            List of FailureCase objects
+            List of FailureCase objects (data NOT loaded yet)
         """
         if systems is None:
             systems = self.systems
@@ -118,7 +215,8 @@ class RCAEvalDataLoader:
         for system in systems:
             system_dir = self.data_dir / system
             if not system_dir.exists():
-                print(f"⚠️  System directory not found: {system_dir}")
+                if verbose:
+                    print(f"⚠️  System directory not found: {system_dir}")
                 continue
 
             # Scan for RE versions
@@ -127,19 +225,23 @@ class RCAEvalDataLoader:
                 if not re_version_dir.exists():
                     continue
 
-                # Recursively find all failure case directories
+                # Recursively find all failure case directories (LAZY)
                 case_dirs = self._discover_case_directories(re_version_dir)
 
+                if verbose:
+                    print(f"📂 {system}/{re_version}: Found {len(case_dirs)} cases")
+
                 for case_dir in case_dirs:
-                    case = self._load_single_case(system, re_version, case_dir)
+                    case = self._create_case_metadata(system, re_version, case_dir)
                     if case is not None:
                         cases.append(case)
 
         if len(cases) == 0:
-            print("❌ No cases loaded! Please check dataset structure.")
+            print("❌ No cases found! Please check dataset structure.")
             print(f"   Expected structure: {self.data_dir}/{{System}}/{{RE_Version}}/")
         else:
-            print(f"✅ Loaded {len(cases)} failure cases")
+            if verbose:
+                print(f"\n✅ Discovered {len(cases)} failure cases (data not loaded yet)")
 
         return cases
 
@@ -173,11 +275,15 @@ class RCAEvalDataLoader:
         """
         Parse service and fault type from folder name
 
-        Expected format: {service}_{fault}/1/ or {service}_{fault}/
+        Handles multiple formats:
+          - {service}_{fault}/1/           → service='ts-auth-service', fault='CPU'
+          - {service}_{fault_code}_{num}/  → service='ts-route', fault='DISK' (f3)
+
         Examples:
-          - ts-auth-service_cpu -> service='ts-auth-service', fault='CPU'
-          - adservice_cpu -> service='adservice', fault='CPU'
-          - carts_f1 -> service='carts', fault='CPU' (via mapping)
+          - ts-auth-service_cpu → service='ts-auth-service', fault='CPU'
+          - adservice_cpu → service='adservice', fault='CPU'
+          - carts_f1 → service='carts', fault='CPU' (via mapping)
+          - ts-route-service_f3_1 → service='ts-route-service', fault='DISK'
 
         Args:
             case_dir: Path to case directory
@@ -185,18 +291,27 @@ class RCAEvalDataLoader:
         Returns:
             (service, fault_type) or (None, None) if parsing fails
         """
-        # Get the parent folder name (skip '1' if it exists)
+        # Get the folder name (skip numeric suffix if present)
         folder_name = case_dir.name
         if folder_name.isdigit():
             folder_name = case_dir.parent.name
 
-        # Split by underscore (last part is fault code)
-        parts = folder_name.rsplit('_', 1)
+        # Split by underscore
+        parts = folder_name.split('_')
 
-        if len(parts) != 2:
+        if len(parts) < 2:
             return None, None
 
-        service, fault_code = parts
+        # Handle format: {service}_{fault_code}_{num}
+        # Example: ts-route-service_f3_1
+        if len(parts) >= 3 and parts[-1].isdigit():
+            # Last part is number, second-to-last is fault code
+            service = '_'.join(parts[:-2])
+            fault_code = parts[-2]
+        else:
+            # Standard format: {service}_{fault}
+            service = '_'.join(parts[:-1])
+            fault_code = parts[-1]
 
         # Map fault code to standard fault type
         fault_type = self.FAULT_CODE_MAP.get(fault_code.lower())
@@ -206,7 +321,7 @@ class RCAEvalDataLoader:
             if fault_code.upper() in ['CPU', 'MEM', 'DISK', 'DELAY', 'LOSS', 'SOCKET']:
                 fault_type = fault_code.upper()
             else:
-                print(f"⚠️  Unknown fault code: {fault_code} in {folder_name}")
+                # Unknown fault code - skip this case
                 return service, None
 
         return service, fault_type
@@ -229,9 +344,14 @@ class RCAEvalDataLoader:
                 return file_path
         return None
 
-    def _load_single_case(self, system: str, re_version: str, case_dir: Path) -> Optional[FailureCase]:
+    def _create_case_metadata(
+        self,
+        system: str,
+        re_version: str,
+        case_dir: Path
+    ) -> Optional[FailureCase]:
         """
-        Load a single failure case with all modalities
+        Create FailureCase object with metadata ONLY (no data loading)
 
         Args:
             system: System name (TrainTicket, SockShop, OnlineBoutique)
@@ -239,7 +359,7 @@ class RCAEvalDataLoader:
             case_dir: Path to case directory
 
         Returns:
-            FailureCase object or None if loading fails
+            FailureCase object or None if parsing fails
         """
         try:
             # Parse labels from folder name
@@ -251,34 +371,13 @@ class RCAEvalDataLoader:
             # Generate case ID
             case_id = f"{system}_{re_version}_{service}_{fault_type}_{case_dir.name}"
 
-            # Load metrics (required)
-            metrics_file = self._find_metric_file(case_dir)
-            if metrics_file is None:
+            # Find file paths (NO LOADING)
+            metrics_path = self._find_metric_file(case_dir)
+            logs_path = case_dir / 'logs.csv' if (case_dir / 'logs.csv').exists() else None
+            traces_path = case_dir / 'traces.csv' if (case_dir / 'traces.csv').exists() else None
+
+            if metrics_path is None:
                 return None
-
-            try:
-                metrics = pd.read_csv(metrics_file)
-            except Exception as e:
-                print(f"⚠️  Error reading metrics from {metrics_file}: {e}")
-                return None
-
-            # Load logs (optional)
-            logs_file = case_dir / 'logs.csv'
-            logs = None
-            if logs_file.exists():
-                try:
-                    logs = pd.read_csv(logs_file)
-                except Exception as e:
-                    print(f"⚠️  Error reading logs from {logs_file}: {e}")
-
-            # Load traces (optional)
-            traces_file = case_dir / 'traces.csv'
-            traces = None
-            if traces_file.exists():
-                try:
-                    traces = pd.read_csv(traces_file)
-                except Exception as e:
-                    print(f"⚠️  Error reading traces from {traces_file}: {e}")
 
             # Root cause indicator (heuristic: fault type mapped to metric)
             indicator_map = {
@@ -296,26 +395,26 @@ class RCAEvalDataLoader:
             if case_dir.name.isdigit():
                 case_number = int(case_dir.name)
 
-            # Create failure case object
+            # Create failure case object (NO DATA LOADED)
             case = FailureCase(
                 case_id=case_id,
                 system=system,
                 fault_type=fault_type,
                 root_cause_service=service,
                 root_cause_indicator=root_cause_indicator,
-                metrics=metrics,
-                logs=logs,
-                traces=traces,
+                metrics_path=metrics_path,
+                logs_path=logs_path,
+                traces_path=traces_path,
                 re_version=re_version,
                 case_number=case_number,
-                timestamp=None,  # Not available in folder structure
-                duration_minutes=60  # Default assumption
+                timestamp=None,
+                duration_minutes=60
             )
 
             return case
 
         except Exception as e:
-            print(f"⚠️  Error loading case from {case_dir}: {e}")
+            # Silently skip malformed cases
             return None
 
     def load_splits(
@@ -337,7 +436,7 @@ class RCAEvalDataLoader:
         Returns:
             (train_cases, val_cases, test_cases)
         """
-        cases = self.load_all_cases()
+        cases = self.load_all_cases(verbose=True)
 
         if len(cases) == 0:
             print("❌ No cases loaded - cannot create splits")
@@ -499,7 +598,7 @@ def load_rcaeval_dataset(
         split: 'all', 'train', 'val', or 'test'
 
     Returns:
-        List of FailureCase objects
+        List of FailureCase objects (data NOT loaded)
     """
     loader = RCAEvalDataLoader(data_dir)
 
@@ -520,14 +619,13 @@ def load_rcaeval_dataset(
 # Example usage
 if __name__ == '__main__':
     print("=" * 80)
-    print("RCAEval Data Loader - Testing")
+    print("RCAEval Data Loader - LAZY LOADING Test")
     print("=" * 80)
 
-    # Load dataset
+    # Load dataset (FAST - only scans directories)
     loader = RCAEvalDataLoader('data/RCAEval')
 
-    # Test loading all cases
-    print("\n1. Loading all cases...")
+    print("\n1. Discovering all cases (lazy - no CSV loading)...")
     cases = loader.load_all_cases()
 
     if cases:
@@ -535,7 +633,7 @@ if __name__ == '__main__':
         print("\n2. Creating stratified splits...")
         train, val, test = loader.load_splits(stratify_by='fault_type')
 
-        # Show statistics
+        # Show statistics (NO DATA LOADED YET)
         print("\n3. Fault Type Distribution (All Cases):")
         for fault_type, count in sorted(loader.get_fault_type_distribution(cases).items()):
             print(f"   {fault_type}: {count} cases")
@@ -549,34 +647,44 @@ if __name__ == '__main__':
         for service, count in sorted(service_dist.items(), key=lambda x: x[1], reverse=True)[:10]:
             print(f"   {service}: {count} cases")
 
-        # Show sample case
-        print("\n6. Sample Case Details:")
+        # Show sample case WITHOUT loading data
+        print("\n6. Sample Case Metadata (NO DATA LOADED):")
         sample = cases[0]
         print(f"   Case ID: {sample.case_id}")
         print(f"   System: {sample.system}")
         print(f"   RE Version: {sample.re_version}")
         print(f"   Fault Type: {sample.fault_type}")
         print(f"   Root Cause Service: {sample.root_cause_service}")
-        print(f"   Root Cause Indicator: {sample.root_cause_indicator}")
+        print(f"   Has metrics: {sample.has_metrics()}")
+        print(f"   Has logs: {sample.has_logs()}")
+        print(f"   Has traces: {sample.has_traces()}")
+
+        # NOW load data for this specific case
+        print("\n7. Loading data for sample case...")
+        sample.load_data(metrics=True, logs=True, traces=True, verbose=True)
 
         if sample.metrics is not None:
             print(f"\n   Metrics: {sample.metrics.shape} (timesteps × features)")
             print(f"      Columns (first 5): {list(sample.metrics.columns)[:5]}")
-        else:
-            print(f"   Metrics: Not available")
 
         if sample.logs is not None:
             print(f"   Logs: {len(sample.logs)} entries")
-        else:
-            print(f"   Logs: Not available")
 
         if sample.traces is not None:
             print(f"   Traces: {len(sample.traces)} spans")
-        else:
-            print(f"   Traces: Not available")
+
+        # Unload to free memory
+        print("\n8. Unloading data to free memory...")
+        sample.unload_data()
+        print("   ✅ Data unloaded")
 
         print("\n" + "=" * 80)
-        print("✅ Data loader test complete!")
+        print("✅ Lazy loading test complete!")
         print("=" * 80)
+        print("\nKey points:")
+        print("  - Discovery is FAST (no CSV loading)")
+        print("  - Data loaded on-demand via .load_data()")
+        print("  - Can unload data to free memory")
+        print("  - Can load specific modalities (metrics only, etc.)")
     else:
-        print("\n❌ No cases loaded - check dataset structure")
+        print("\n❌ No cases discovered - check dataset structure")
