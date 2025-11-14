@@ -21,11 +21,13 @@ try:
     from tigramite.pcmci import PCMCI
     from tigramite.independence_tests import ParCorr, GPDC
     TIGRAMITE_AVAILABLE = True
-except ImportError:
+    _TIGRAMITE_IMPORT_ERROR = None
+except ImportError as import_err:
     TIGRAMITE_AVAILABLE = False
+    _TIGRAMITE_IMPORT_ERROR = import_err
     warnings.warn(
-        "tigramite not installed. PCMCI causal discovery unavailable. "
-        "Install with: pip install tigramite"
+        "tigramite import failed (" + str(import_err) + "). "
+        "PCMCI causal discovery unavailable. Install with: pip install tigramite"
     )
 
 
@@ -56,7 +58,7 @@ class PCMCIDiscovery:
         if not TIGRAMITE_AVAILABLE:
             raise ImportError(
                 "tigramite not installed. Install with: pip install tigramite"
-            )
+            ) from _TIGRAMITE_IMPORT_ERROR
 
         self.tau_max = tau_max
         self.pc_alpha = pc_alpha
@@ -90,7 +92,7 @@ class PCMCIDiscovery:
             - 'summary': Human-readable summary
         """
         if not TIGRAMITE_AVAILABLE:
-            raise ImportError("tigramite not installed")
+            raise ImportError("tigramite not installed") from _TIGRAMITE_IMPORT_ERROR
 
         # Validate input
         if data.ndim != 2:
