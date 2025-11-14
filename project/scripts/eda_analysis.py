@@ -248,9 +248,11 @@ class RCAEvalEDA:
 
             # Check for common log fields
             if 'level' in df.columns:
-                level_dist = Counter(df['level'])
+                # Filter out NaN values before counting
+                level_dist = Counter(df['level'].dropna())
                 print(f"\n🔍 Log Level Distribution:")
-                for level, count in sorted(level_dist.items(), key=lambda x: x[1], reverse=True):
+                # Limit to top 10 levels to avoid spam
+                for level, count in sorted(level_dist.items(), key=lambda x: x[1], reverse=True)[:10]:
                     print(f"      {level}: {count:,} ({count/len(df)*100:.1f}%)")
 
     def _load_traces_sample(self, case: FailureCase, max_rows: int = 50000) -> Tuple[int, pd.DataFrame]:
