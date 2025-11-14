@@ -40,21 +40,20 @@ print("\n1. METRICS ENCODERS:")
 print("-" * 70)
 
 try:
-    try:
-        print("  Chronos-Bolt-Tiny:")
-        chronos = ChronosEncoder(embedding_dim=256, device='cpu', freeze_backbone=True)
-        chronos_params = count_params(chronos)
-        chronos_trainable = count_trainable_params(chronos)
-        total_params += chronos_params
-        total_trainable += chronos_trainable
-        print(f"    Total params: {chronos_params:,} (~{chronos_params/1e6:.1f}M)")
-        print(f"    Trainable: {chronos_trainable:,} (~{chronos_trainable/1e6:.1f}M)")
-        print(f"    Frozen: {chronos_params - chronos_trainable:,} (~{(chronos_params - chronos_trainable)/1e6:.1f}M)")
-        print(f"    ✓ Backbone frozen: {chronos.freeze_backbone}")
-    except (ImportError, RuntimeError) as e:
-        print(f"    ⚠ Chronos: SKIPPED - Version incompatibility")
-        print(f"    Recommendation: Use TCN encoder instead (already working)")
-        print(f"    TCN provides excellent time series encoding with 509-timestep receptive field")
+    print("  Chronos-Bolt-Tiny:")
+    chronos = ChronosEncoder(embedding_dim=256, device='cpu', freeze_backbone=True)
+    chronos_params = count_params(chronos)
+    chronos_trainable = count_trainable_params(chronos)
+    total_params += chronos_params
+    total_trainable += chronos_trainable
+    print(f"    Total params: {chronos_params:,} (~{chronos_params/1e6:.1f}M)")
+    print(f"    Trainable: {chronos_trainable:,} (~{chronos_trainable/1e6:.1f}M)")
+    print(f"    Frozen: {chronos_params - chronos_trainable:,} (~{(chronos_params - chronos_trainable)/1e6:.1f}M)")
+    print(f"    ✓ Backbone frozen: {chronos.freeze_backbone}")
+except (ImportError, RuntimeError) as e:
+    print(f"    ⚠ Chronos: SKIPPED - Version incompatibility")
+    print(f"    Recommendation: Use TCN encoder instead (already working)")
+    print(f"    TCN provides excellent time series encoding with 509-timestep receptive field")
 
 print("\n  TCN Encoder:")
 tcn = TCNEncoder(in_channels=7, embedding_dim=256, num_layers=7)
