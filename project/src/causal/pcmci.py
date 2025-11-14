@@ -16,16 +16,18 @@ import networkx as nx
 import warnings
 
 # Try to import tigramite
+TIGRAMITE_AVAILABLE = False
 try:
     from tigramite import data_processing as pp
     from tigramite.pcmci import PCMCI
     from tigramite.independence_tests import ParCorr, GPDC
     TIGRAMITE_AVAILABLE = True
-except (ImportError, ModuleNotFoundError):
-    TIGRAMITE_AVAILABLE = False
+except (ImportError, ModuleNotFoundError, SyntaxError) as e:
+    # Tigramite not available or has errors
     warnings.warn(
-        "tigramite not installed or import failed. PCMCI causal discovery unavailable. "
-        "Install with: pip install tigramite"
+        f"tigramite not available: {type(e).__name__}. "
+        "PCMCI causal discovery will be unavailable. "
+        "You can still use Granger-Lasso baseline."
     )
 
 
