@@ -17,6 +17,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import grangercausalitytests
 from sklearn.linear_model import LassoCV
 from sklearn.preprocessing import StandardScaler
+from joblib import Parallel, delayed
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -240,20 +241,66 @@ class GrangerLassoRCA:
     Reference: Arnold et al. (2007) "Temporal causal modeling with graphical granger methods"
     """
 
-    def __init__(self, max_lag: int = 5, alpha: float = 0.01):
+    def __init__(self, max_lag: int = 5, alpha: float = 0.01, n_jobs: int = -1):
         """
         Initialize Granger-Lasso RCA
 
         Args:
             max_lag: Maximum lag for Granger causality test
             alpha: Significance level for Granger test (default: 0.01)
+            n_jobs: Number of parallel jobs (-1 = use all cores, 1 = sequential)
         """
         self.max_lag = max_lag
         self.alpha = alpha
+        self.n_jobs = n_jobs
+
+    def _test_granger_pair(self, i: int, j: int, cols: pd.Index, metrics: pd.DataFrame) -> Tuple[int, int, int]:
+        """
+        Test Granger causality for a single (i, j) pair
+
+        Args:
+            i: Index of cause variable
+            j: Index of effect variable
+            cols: Column names
+            metrics: DataFrame with metrics
+
+        Returns:
+            Tuple of (i, j, causal_flag) where causal_flag=1 if i causes j
+        """
+        if i == j:
+            return (i, j, 0)
+
+        try:
+            cause = cols[i]
+            effect = cols[j]
+
+            # Prepare data
+            data = metrics[[effect, cause]].dropna()
+
+            if len(data) < 50:  # Minimum length
+                return (i, j, 0)
+
+            # Granger causality test
+            test_result = grangercausalitytests(
+                data,
+                maxlag=self.max_lag,
+                verbose=False
+            )
+
+            # Check if significant at any lag
+            for lag in range(1, self.max_lag + 1):
+                p_value = test_result[lag][0]['ssr_ftest'][1]
+                if p_value < self.alpha:
+                    return (i, j, 1)
+
+            return (i, j, 0)
+
+        except Exception:
+            return (i, j, 0)
 
     def build_causal_graph(self, metrics: pd.DataFrame, max_vars: int = 20) -> np.ndarray:
         """
-        Build causal graph using Granger causality
+        Build causal graph using Granger causality (PARALLELIZED)
 
         Args:
             metrics: DataFrame with metrics (columns = variables, rows = timesteps)
@@ -269,35 +316,18 @@ class GrangerLassoRCA:
         # Initialize adjacency matrix
         adj_matrix = np.zeros((n_vars, n_vars))
 
-        # Test Granger causality for each pair
-        for i, cause in enumerate(cols):
-            for j, effect in enumerate(cols):
-                if i == j:
-                    continue
+        # Generate all (i, j) pairs
+        pairs = [(i, j) for i in range(n_vars) for j in range(n_vars) if i != j]
 
-                try:
-                    # Prepare data
-                    data = metrics[[effect, cause]].dropna()
+        # Test Granger causality in parallel
+        results = Parallel(n_jobs=self.n_jobs, backend='loky')(
+            delayed(self._test_granger_pair)(i, j, cols, metrics)
+            for i, j in pairs
+        )
 
-                    if len(data) < 50:  # Minimum length
-                        continue
-
-                    # Granger causality test
-                    test_result = grangercausalitytests(
-                        data,
-                        maxlag=self.max_lag,
-                        verbose=False
-                    )
-
-                    # Check if significant at any lag
-                    for lag in range(1, self.max_lag + 1):
-                        p_value = test_result[lag][0]['ssr_ftest'][1]
-                        if p_value < self.alpha:
-                            adj_matrix[i, j] = 1
-                            break
-
-                except Exception:
-                    continue
+        # Populate adjacency matrix from results
+        for i, j, causal_flag in results:
+            adj_matrix[i, j] = causal_flag
 
         return adj_matrix
 
