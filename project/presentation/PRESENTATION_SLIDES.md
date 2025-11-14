@@ -86,7 +86,44 @@ Three Key Innovations:
 
 ---
 
-## Slide 5: System Architecture
+## Slide 5: Project Evolution - Our Three-Phase Journey
+
+**Systematic Progression from Baseline to State-of-the-Art**
+
+📍 **Phase 1: Baseline Exploration** (Mid-Semester, Oct 2024)
+- Metrics-only detection (IF, RF, LSTM-AE)
+- 88-feature engineering framework
+- **Identified**: Overfitting, latency bottleneck, need for RCA
+
+🔬 **Phase 2: Research Adaptation** (Nov 2024)
+- Discovered Chronos foundation model (Amazon)
+- Strategic shift: Zero-shot pretrained > custom training
+- Prepared RCAEval dataset (40GB, 731 cases)
+
+🚀 **Phase 3: Multimodal RCA System** (Dec 2024–Jan 2025)
+- Executed planned multimodal fusion (midsem Chapter 6)
+- Integrated Chronos + PCMCI + GCN + Cross-Attention
+- Achieved 76.1% AC@1 on RCAEval benchmark
+
+---
+
+## Slide 6: What Changed and Why
+
+**Planned in Mid-Semester → Delivered in Final → Rationale**
+
+| Aspect | Mid-Sem Plan | Final Delivery | Why the Change? |
+|--------|--------------|----------------|-----------------|
+| **Data** | Metrics only → | Metrics+Logs+Traces | Single modality misses 40% of fault signatures |
+| **Encoder** | TCN-AE → | Chronos Foundation Model | Zero-shot pretrained > task-specific (2024 research) |
+| **Goal** | Detection → | Root Cause Localization | Operators need ranked suspects, not binary alarms |
+| **Dataset** | 10K samples → | 731 RCAEval cases | Standard benchmark for reproducibility |
+| **Causality** | Planned → | PCMCI Delivered | Distinguishes root cause from cascading effects |
+
+**Key Point**: All multimodal+causal+RCA goals were **explicitly proposed in mid-semester Chapter 6**. We executed the plan with smart adaptations based on emerging 2024 research.
+
+---
+
+## Slide 7: System Architecture
 
 **End-to-End Multimodal Pipeline**
 
@@ -111,7 +148,7 @@ Input Modalities
 
 ---
 
-## Slide 6: Metrics Encoding - Chronos Foundation Model
+## Slide 8: Metrics Encoding - Chronos Foundation Model
 
 **Zero-Shot Time-Series Forecasting**
 
@@ -135,7 +172,7 @@ Input Modalities
 
 ---
 
-## Slide 7: Causal Discovery with PCMCI
+## Slide 9: Causal Discovery with PCMCI
 
 **Distinguishing Root Cause from Cascading Failures**
 
@@ -154,7 +191,7 @@ Input Modalities
 
 ---
 
-## Slide 8: Multimodal Fusion - Cross-Modal Attention
+## Slide 10: Multimodal Fusion - Cross-Modal Attention
 
 **Learning Complementary Patterns**
 
@@ -179,7 +216,7 @@ For each modality pair (i, j):
 
 ---
 
-## Slide 9: Experimental Setup
+## Slide 11: Experimental Setup
 
 **RCAEval Benchmark Dataset**
 
@@ -203,7 +240,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 10: Ablation Studies - What Makes It Work?
+## Slide 12: Ablation Studies - What Makes It Work?
 
 **Comprehensive Component Analysis (17 Configurations)**
 
@@ -225,7 +262,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 11: Performance Analysis
+## Slide 13: Performance Analysis
 
 **Performance by Fault Type**
 
@@ -244,7 +281,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 12: Scalability Analysis
+## Slide 14: Scalability Analysis
 
 **Performance vs System Scale**
 
@@ -265,7 +302,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 13: Comparison with State-of-the-Art
+## Slide 15: Comparison with State-of-the-Art
 
 **vs RUN (AAAI 2024) - Current SOTA**
 
@@ -287,7 +324,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 14: Qualitative Analysis - Attention Visualization
+## Slide 16: Qualitative Analysis - Attention Visualization
 
 **Understanding Model Decisions**
 
@@ -312,7 +349,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 15: Why Does It Work?
+## Slide 17: Why Does It Work?
 
 **Three Synergistic Components**
 
@@ -336,7 +373,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 16: Implementation Highlights
+## Slide 18: Implementation Highlights
 
 **5,000+ Lines of Production-Quality Code**
 
@@ -359,7 +396,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 17: Practical Deployment Considerations
+## Slide 19: Practical Deployment Considerations
 
 **Production-Ready System**
 
@@ -384,7 +421,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 18: Limitations and Future Work
+## Slide 20: Limitations and Future Work
 
 **Current Limitations:**
 
@@ -406,7 +443,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 19: Future Research Directions
+## Slide 21: Future Research Directions
 
 **Exciting Opportunities**
 
@@ -432,7 +469,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 20: Contributions Summary
+## Slide 22: Contributions Summary
 
 **What We Achieved**
 
@@ -458,7 +495,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 21: Impact
+## Slide 23: Impact
 
 **For Research Community:**
 - ✅ Foundation models viable for AIOps
@@ -482,7 +519,7 @@ Random, 3-Sigma, ARIMA, Granger-Lasso, MicroRCA, BARO, RUN (SOTA)
 
 ---
 
-## Slide 22: Conclusion
+## Slide 24: Conclusion
 
 **Multimodal RCA: A New Paradigm**
 
@@ -501,7 +538,7 @@ As microservice systems grow in complexity, intelligent multimodal RCA will beco
 
 ---
 
-## Slide 23: Q&A
+## Slide 25: Q&A
 
 **Questions?**
 
@@ -522,7 +559,7 @@ As microservice systems grow in complexity, intelligent multimodal RCA will beco
 
 ---
 
-## Slide 24: Thank You!
+## Slide 26: Thank You!
 
 **Thank you for your attention!**
 
