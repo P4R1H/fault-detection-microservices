@@ -108,10 +108,10 @@ class RCAEvalEDA:
         for service, count in rc_dist.most_common(10):
             print(f"      {service}: {count} cases")
 
-        # Data modality availability
-        metrics_available = sum(1 for c in cases if c.metrics is not None)
-        logs_available = sum(1 for c in cases if c.logs is not None)
-        traces_available = sum(1 for c in cases if c.traces is not None)
+        # Data modality availability (LAZY LOADING - check file existence, not loaded data)
+        metrics_available = sum(1 for c in cases if c.has_metrics())
+        logs_available = sum(1 for c in cases if c.has_logs())
+        traces_available = sum(1 for c in cases if c.has_traces())
 
         print(f"\n📊 Data Modality Availability:")
         print(f"   Metrics: {metrics_available}/{len(cases)} cases ({metrics_available/len(cases)*100:.1f}%)")
@@ -122,12 +122,13 @@ class RCAEvalEDA:
         self._plot_distributions(system_dist, fault_dist, rc_dist)
 
     def analyze_metrics_modality(self, cases: List[FailureCase]):
-        """Analyze metrics modality characteristics"""
+        """Analyze metrics modality characteristics (LAZY LOADING)"""
         print("\n" + "=" * 80)
         print("2. Metrics Modality Analysis")
         print("=" * 80)
 
-        metrics_cases = [c for c in cases if c.metrics is not None]
+        # Filter cases that have metrics files
+        metrics_cases = [c for c in cases if c.has_metrics()]
 
         if not metrics_cases:
             print("⚠️  No metrics data available")
@@ -135,18 +136,28 @@ class RCAEvalEDA:
 
         print(f"\n📈 Analyzing {len(metrics_cases)} cases with metrics")
 
-        # Dimensionality analysis
-        feature_counts = [len(c.metrics.columns) for c in metrics_cases]
-        timestep_counts = [len(c.metrics) for c in metrics_cases]
+        # Load a sample (first 10) to analyze dimensionality
+        sample_cases = metrics_cases[:10]
+        feature_counts = []
+        timestep_counts = []
 
-        print(f"\n🔢 Dimensionality:")
-        print(f"   Features per case:")
-        print(f"      Min: {min(feature_counts)}, Max: {max(feature_counts)}, Median: {np.median(feature_counts):.0f}")
-        print(f"   Timesteps per case:")
-        print(f"      Min: {min(timestep_counts)}, Max: {max(timestep_counts)}, Median: {np.median(timestep_counts):.0f}")
+        for case in sample_cases:
+            case.load_data(metrics=True, logs=False, traces=False)
+            if case.metrics is not None:
+                feature_counts.append(len(case.metrics.columns))
+                timestep_counts.append(len(case.metrics))
+            case.unload_data()
+
+        if feature_counts:
+            print(f"\n🔢 Dimensionality (sampled from {len(sample_cases)} cases):")
+            print(f"   Features per case:")
+            print(f"      Min: {min(feature_counts)}, Max: {max(feature_counts)}, Median: {np.median(feature_counts):.0f}")
+            print(f"   Timesteps per case:")
+            print(f"      Min: {min(timestep_counts)}, Max: {max(timestep_counts)}, Median: {np.median(timestep_counts):.0f}")
 
         # Sample case analysis
         sample_case = metrics_cases[0]
+        sample_case.load_data(metrics=True, logs=False, traces=False)
         if sample_case.metrics is not None:
             df = sample_case.metrics
             print(f"\n📊 Sample Case ({sample_case.case_id}):")
@@ -158,17 +169,19 @@ class RCAEvalEDA:
             print(f"   Missing values: {df.isnull().sum().sum()} ({df.isnull().sum().sum() / df.size * 100:.2f}%)")
             print(f"   Mean: {df.mean().mean():.4f}")
             print(f"   Std: {df.std().mean():.4f}")
+        sample_case.unload_data()
 
-        # Save metrics analysis
+        # Save metrics analysis (load cases one by one)
         self._save_metrics_statistics(metrics_cases)
 
     def analyze_logs_modality(self, cases: List[FailureCase]):
-        """Analyze logs modality characteristics"""
+        """Analyze logs modality characteristics (LAZY LOADING)"""
         print("\n" + "=" * 80)
         print("3. Logs Modality Analysis")
         print("=" * 80)
 
-        logs_cases = [c for c in cases if c.logs is not None]
+        # Filter cases that have logs files
+        logs_cases = [c for c in cases if c.has_logs()]
 
         if not logs_cases:
             print("⚠️  No logs data available")
@@ -176,19 +189,27 @@ class RCAEvalEDA:
 
         print(f"\n📝 Analyzing {len(logs_cases)} cases with logs")
 
-        # Log volume analysis
-        log_counts = [len(c.logs) for c in logs_cases]
+        # Load a sample (first 10) to analyze volume
+        sample_cases = logs_cases[:min(10, len(logs_cases))]
+        log_counts = []
 
-        print(f"\n📊 Log Volume:")
-        print(f"   Total logs: {sum(log_counts):,}")
-        print(f"   Logs per case:")
-        print(f"      Min: {min(log_counts):,}")
-        print(f"      Max: {max(log_counts):,}")
-        print(f"      Median: {np.median(log_counts):,.0f}")
-        print(f"      Mean: {np.mean(log_counts):,.0f}")
+        for case in sample_cases:
+            case.load_data(metrics=False, logs=True, traces=False)
+            if case.logs is not None:
+                log_counts.append(len(case.logs))
+            case.unload_data()
+
+        if log_counts:
+            print(f"\n📊 Log Volume (sampled from {len(sample_cases)} cases):")
+            print(f"   Logs per case:")
+            print(f"      Min: {min(log_counts):,}")
+            print(f"      Max: {max(log_counts):,}")
+            print(f"      Median: {np.median(log_counts):,.0f}")
+            print(f"      Mean: {np.mean(log_counts):,.0f}")
 
         # Sample case analysis
         sample_case = logs_cases[0]
+        sample_case.load_data(metrics=False, logs=True, traces=False)
         if sample_case.logs is not None:
             df = sample_case.logs
             print(f"\n📄 Sample Case ({sample_case.case_id}):")
@@ -201,14 +222,16 @@ class RCAEvalEDA:
                 print(f"\n🔍 Log Level Distribution:")
                 for level, count in sorted(level_dist.items(), key=lambda x: x[1], reverse=True):
                     print(f"      {level}: {count:,} ({count/len(df)*100:.1f}%)")
+        sample_case.unload_data()
 
     def analyze_traces_modality(self, cases: List[FailureCase]):
-        """Analyze traces modality characteristics"""
+        """Analyze traces modality characteristics (LAZY LOADING)"""
         print("\n" + "=" * 80)
         print("4. Traces Modality Analysis")
         print("=" * 80)
 
-        traces_cases = [c for c in cases if c.traces is not None]
+        # Filter cases that have traces files
+        traces_cases = [c for c in cases if c.has_traces()]
 
         if not traces_cases:
             print("⚠️  No traces data available")
@@ -216,19 +239,27 @@ class RCAEvalEDA:
 
         print(f"\n🔗 Analyzing {len(traces_cases)} cases with traces")
 
-        # Trace volume analysis
-        trace_counts = [len(c.traces) for c in traces_cases]
+        # Load a sample (first 10) to analyze volume
+        sample_cases = traces_cases[:min(10, len(traces_cases))]
+        trace_counts = []
 
-        print(f"\n📊 Trace Volume:")
-        print(f"   Total spans: {sum(trace_counts):,}")
-        print(f"   Spans per case:")
-        print(f"      Min: {min(trace_counts):,}")
-        print(f"      Max: {max(trace_counts):,}")
-        print(f"      Median: {np.median(trace_counts):,.0f}")
-        print(f"      Mean: {np.mean(trace_counts):,.0f}")
+        for case in sample_cases:
+            case.load_data(metrics=False, logs=False, traces=True)
+            if case.traces is not None:
+                trace_counts.append(len(case.traces))
+            case.unload_data()
+
+        if trace_counts:
+            print(f"\n📊 Trace Volume (sampled from {len(sample_cases)} cases):")
+            print(f"   Spans per case:")
+            print(f"      Min: {min(trace_counts):,}")
+            print(f"      Max: {max(trace_counts):,}")
+            print(f"      Median: {np.median(trace_counts):,.0f}")
+            print(f"      Mean: {np.mean(trace_counts):,.0f}")
 
         # Sample case analysis
         sample_case = traces_cases[0]
+        sample_case.load_data(metrics=False, logs=False, traces=True)
         if sample_case.traces is not None:
             df = sample_case.traces
             print(f"\n🔍 Sample Case ({sample_case.case_id}):")
@@ -241,6 +272,7 @@ class RCAEvalEDA:
                 print(f"\n🏢 Services in trace:")
                 print(f"      Unique services: {len(services)}")
                 print(f"      Top services: {list(services)[:5]}")
+        sample_case.unload_data()
 
     def analyze_cross_modality_patterns(self, cases: List[FailureCase]):
         """Analyze patterns across modalities"""
@@ -261,9 +293,10 @@ class RCAEvalEDA:
         }
 
         for case in cases:
-            has_metrics = case.metrics is not None
-            has_logs = case.logs is not None
-            has_traces = case.traces is not None
+            # LAZY LOADING - check file existence, not loaded data
+            has_metrics = case.has_metrics()
+            has_logs = case.has_logs()
+            has_traces = case.has_traces()
 
             if has_metrics and has_logs and has_traces:
                 completeness['all_three'] += 1
@@ -340,7 +373,7 @@ class RCAEvalEDA:
         print(f"\n💾 Saved distribution plots to: {self.output_dir / 'dataset_distributions.png'}")
 
     def _save_metrics_statistics(self, metrics_cases: List[FailureCase]):
-        """Save detailed metrics statistics"""
+        """Save detailed metrics statistics (LAZY LOADING)"""
         stats_file = self.output_dir / 'metrics_statistics.txt'
 
         with open(stats_file, 'w') as f:
@@ -348,6 +381,9 @@ class RCAEvalEDA:
             f.write("=" * 80 + "\n\n")
 
             for i, case in enumerate(metrics_cases[:5]):  # First 5 cases
+                # Load data
+                case.load_data(metrics=True, logs=False, traces=False)
+
                 if case.metrics is not None:
                     df = case.metrics
                     f.write(f"Case {i+1}: {case.case_id}\n")
@@ -355,6 +391,9 @@ class RCAEvalEDA:
                     f.write(f"  Columns: {list(df.columns)}\n")
                     f.write(f"  Summary statistics:\n")
                     f.write(f"{df.describe()}\n\n")
+
+                # Unload data to free memory
+                case.unload_data()
 
         print(f"💾 Saved metrics statistics to: {stats_file}")
 
