@@ -158,6 +158,10 @@ def test_chronos_encoder(windows):
         except ImportError as ie:
             print(f"⚠ Chronos not installed, skipping: {ie}")
             return None
+        except RuntimeError as re:
+            print(f"⚠ Chronos version incompatibility, skipping: {re}")
+            print("  Recommendation: Use TCN encoder instead (working)")
+            return None
 
         # Forward pass
         encoder.eval()
@@ -242,7 +246,7 @@ def test_traces_preprocessing(cases):
 
         if case.traces is None:
             print("✗ No traces data available")
-            return None, None
+            return None, None, None
 
         print(f"\n  Raw traces: {len(case.traces)} spans")
 

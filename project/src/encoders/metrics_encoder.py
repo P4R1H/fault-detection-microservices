@@ -47,11 +47,29 @@ class ChronosEncoder(nn.Module):
         # Load Chronos model
         try:
             from chronos import ChronosPipeline
-            self.chronos = ChronosPipeline.from_pretrained(
-                model_name,
-                device_map=device,
-                torch_dtype=torch.float32  # Use FP32 for stability
-            )
+
+            # Try new API first (dtype instead of torch_dtype)
+            try:
+                self.chronos = ChronosPipeline.from_pretrained(
+                    model_name,
+                    device_map=device,
+                    dtype=torch.float32  # Use FP32 for stability
+                )
+            except (TypeError, AttributeError):
+                # Fallback to old API
+                try:
+                    self.chronos = ChronosPipeline.from_pretrained(
+                        model_name,
+                        device_map=device,
+                        torch_dtype=torch.float32  # Old API
+                    )
+                except TypeError as e:
+                    # Version incompatibility - likely config issue
+                    raise RuntimeError(
+                        f"Chronos version incompatibility: {e}\n"
+                        f"Try: pip install --upgrade chronos-forecasting\n"
+                        f"Or use TCN encoder instead (already working)"
+                    )
 
             # Freeze backbone if specified
             if freeze_backbone:
