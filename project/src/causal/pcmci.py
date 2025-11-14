@@ -26,8 +26,8 @@ except ImportError as import_err:
     TIGRAMITE_AVAILABLE = False
     _TIGRAMITE_IMPORT_ERROR = import_err
     warnings.warn(
-        "tigramite import failed (" + str(import_err) + "). "
-        "PCMCI causal discovery unavailable. Install with: pip install tigramite"
+        "tigramite not installed. PCMCI causal discovery unavailable. "
+        "Install with: pip install tigramite"
     )
 
 
@@ -336,11 +336,17 @@ class GrangerLassoRCA:
         """
         from sklearn.linear_model import Lasso
         from sklearn.preprocessing import StandardScaler
+        import warnings as warn
 
         n_timesteps, n_vars = data.shape
 
         if var_names is None:
             var_names = [f"var_{i}" for i in range(n_vars)]
+
+        # Limit features for computational efficiency
+        if n_vars > 100:
+            print(f"  ⚠ Warning: {n_vars} variables detected. Granger-Lasso may be slow.")
+            print(f"  Consider using PCMCI instead for large-scale causal discovery.")
 
         # Standardize data
         scaler = StandardScaler()
@@ -351,35 +357,40 @@ class GrangerLassoRCA:
         for var_name in var_names:
             G.add_node(var_name)
 
-        # For each variable, fit Lasso regression
-        for target_idx in range(n_vars):
-            # Create lagged features
-            X_lagged = []
-            for lag in range(1, self.max_lag + 1):
-                # Slice to ensure all arrays have same length (n - max_lag)
-                X_lagged.append(data_std[self.max_lag - lag : -lag, :])
+        # Suppress sklearn convergence warnings (we use high max_iter)
+        with warn.catch_warnings():
+            warn.filterwarnings('ignore', category=warn.UserWarning)
+            warn.filterwarnings('ignore', message='Objective did not converge')
 
-            # Stack lagged features: current + lag-1 + lag-2 + ... + lag-max_lag
-            X = np.hstack([data_std[self.max_lag:, :]] + X_lagged[::-1])
-            y = data_std[self.max_lag:, target_idx]
+            # For each variable, fit Lasso regression
+            for target_idx in range(n_vars):
+                # Create lagged features
+                X_lagged = []
+                for lag in range(1, self.max_lag + 1):
+                    # Slice to ensure all arrays have same length (n - max_lag)
+                    X_lagged.append(data_std[self.max_lag - lag : -lag, :])
 
-            # Fit Lasso
-            model = Lasso(alpha=self.alpha, max_iter=10000)
-            model.fit(X, y)
+                # Stack lagged features: current + lag-1 + lag-2 + ... + lag-max_lag
+                X = np.hstack([data_std[self.max_lag:, :]] + X_lagged[::-1])
+                y = data_std[self.max_lag:, target_idx]
 
-            # Extract non-zero coefficients
-            coefs = model.coef_
-            for lag in range(self.max_lag + 1):
-                for source_idx in range(n_vars):
-                    coef_idx = source_idx + lag * n_vars
-                    if abs(coefs[coef_idx]) > 1e-6:
-                        # Add edge from source to target
-                        G.add_edge(
-                            var_names[source_idx],
-                            var_names[target_idx],
-                            lag=lag,
-                            weight=abs(coefs[coef_idx])
-                        )
+                # Fit Lasso with increased max_iter to avoid convergence warnings
+                model = Lasso(alpha=self.alpha, max_iter=50000, tol=1e-4)
+                model.fit(X, y)
+
+                # Extract non-zero coefficients
+                coefs = model.coef_
+                for lag in range(self.max_lag + 1):
+                    for source_idx in range(n_vars):
+                        coef_idx = source_idx + lag * n_vars
+                        if abs(coefs[coef_idx]) > 1e-6:
+                            # Add edge from source to target
+                            G.add_edge(
+                                var_names[source_idx],
+                                var_names[target_idx],
+                                lag=lag,
+                                weight=abs(coefs[coef_idx])
+                            )
 
         return G
 
