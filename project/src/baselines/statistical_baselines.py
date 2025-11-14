@@ -45,20 +45,65 @@ class ThreeSigmaDetector:
     Reference: Industry standard baseline (SRE best practices)
     """
 
-    def __init__(self, n_sigma: float = 3.0, window_size: int = 50):
+    def __init__(self, n_sigma: float = 3.0, window_size: int = 50, n_jobs: int = -1):
         """
         Initialize 3-sigma detector
 
         Args:
             n_sigma: Number of standard deviations (default: 3.0)
             window_size: Rolling window for μ and σ estimation
+            n_jobs: Number of parallel jobs (-1 = use all cores, 1 = sequential)
         """
         self.n_sigma = n_sigma
         self.window_size = window_size
+        self.n_jobs = n_jobs
+
+    def _detect_single_metric(self, col: str, metrics: pd.DataFrame) -> Optional[AnomalyResult]:
+        """
+        Detect anomalies for a single metric
+
+        Args:
+            col: Column name
+            metrics: DataFrame with metrics
+
+        Returns:
+            AnomalyResult or None if insufficient data
+        """
+        series = metrics[col].dropna()
+
+        if len(series) < self.window_size:
+            return None
+
+        # Calculate rolling statistics
+        rolling_mean = series.rolling(window=self.window_size, center=False).mean()
+        rolling_std = series.rolling(window=self.window_size, center=False).std()
+
+        # Calculate bounds
+        upper_bound = rolling_mean + (self.n_sigma * rolling_std)
+        lower_bound = rolling_mean - (self.n_sigma * rolling_std)
+
+        # Detect anomalies
+        anomalies = (series > upper_bound) | (series < lower_bound)
+        is_anomalous = anomalies.any()
+
+        # Calculate anomaly score (max deviation in sigma units)
+        if rolling_std.sum() > 0:
+            deviations = np.abs(series - rolling_mean) / (rolling_std + 1e-8)
+            anomaly_score = deviations.max()
+        else:
+            anomaly_score = 0.0
+
+        return AnomalyResult(
+            metric_name=col,
+            is_anomalous=is_anomalous,
+            anomaly_score=anomaly_score,
+            timestamps=series.index[anomalies].tolist() if is_anomalous else [],
+            threshold=self.n_sigma
+        )
 
     def detect(self, metrics: pd.DataFrame) -> List[AnomalyResult]:
         """
-        Detect anomalies using 3-sigma rule
+        Detect anomalies using 3-sigma rule (PARALLELIZED)
 
         Args:
             metrics: DataFrame with metrics (columns = metric names, rows = timesteps)
@@ -66,42 +111,14 @@ class ThreeSigmaDetector:
         Returns:
             List of AnomalyResult for each metric
         """
-        results = []
+        # Process metrics in parallel
+        results = Parallel(n_jobs=self.n_jobs, backend='loky')(
+            delayed(self._detect_single_metric)(col, metrics)
+            for col in metrics.columns
+        )
 
-        for col in metrics.columns:
-            series = metrics[col].dropna()
-
-            if len(series) < self.window_size:
-                continue
-
-            # Calculate rolling statistics
-            rolling_mean = series.rolling(window=self.window_size, center=False).mean()
-            rolling_std = series.rolling(window=self.window_size, center=False).std()
-
-            # Calculate bounds
-            upper_bound = rolling_mean + (self.n_sigma * rolling_std)
-            lower_bound = rolling_mean - (self.n_sigma * rolling_std)
-
-            # Detect anomalies
-            anomalies = (series > upper_bound) | (series < lower_bound)
-            is_anomalous = anomalies.any()
-
-            # Calculate anomaly score (max deviation in sigma units)
-            if rolling_std.sum() > 0:
-                deviations = np.abs(series - rolling_mean) / (rolling_std + 1e-8)
-                anomaly_score = deviations.max()
-            else:
-                anomaly_score = 0.0
-
-            results.append(AnomalyResult(
-                metric_name=col,
-                is_anomalous=is_anomalous,
-                anomaly_score=anomaly_score,
-                timestamps=series.index[anomalies].tolist() if is_anomalous else [],
-                threshold=self.n_sigma
-            ))
-
-        return results
+        # Filter out None results (insufficient data)
+        return [r for r in results if r is not None]
 
     def rank_services(self, metrics: pd.DataFrame, service_mapping: Dict[str, str]) -> List[Tuple[str, float]]:
         """
@@ -140,7 +157,7 @@ class ARIMAForecaster:
     Reference: Box & Jenkins (1970), standard time series baseline
     """
 
-    def __init__(self, order: Tuple[int, int, int] = (5, 1, 0), threshold_sigma: float = 3.0):
+    def __init__(self, order: Tuple[int, int, int] = (5, 1, 0), threshold_sigma: float = 3.0, n_jobs: int = -1):
         """
         Initialize ARIMA forecaster
 
@@ -150,13 +167,71 @@ class ARIMAForecaster:
                    d: differencing order
                    q: MA order (moving average)
             threshold_sigma: Threshold in sigma units for anomaly detection
+            n_jobs: Number of parallel jobs (-1 = use all cores, 1 = sequential)
         """
         self.order = order
         self.threshold_sigma = threshold_sigma
+        self.n_jobs = n_jobs
+
+    def _detect_single_metric(self, col: str, metrics: pd.DataFrame, train_ratio: float) -> Optional[AnomalyResult]:
+        """
+        Detect anomalies for a single metric using ARIMA
+
+        Args:
+            col: Column name
+            metrics: DataFrame with metrics
+            train_ratio: Proportion of data for training
+
+        Returns:
+            AnomalyResult or None if error/insufficient data
+        """
+        series = metrics[col].dropna()
+
+        if len(series) < 50:  # Minimum length for ARIMA
+            return None
+
+        try:
+            # Split train/test
+            split_idx = int(len(series) * train_ratio)
+            train = series.iloc[:split_idx]
+            test = series.iloc[split_idx:]
+
+            # Fit ARIMA model
+            model = ARIMA(train, order=self.order)
+            model_fit = model.fit()
+
+            # Forecast test period
+            forecast = model_fit.forecast(steps=len(test))
+
+            # Calculate residuals
+            residuals = np.abs(test.values - forecast)
+
+            # Threshold based on training residuals
+            train_residuals = np.abs(model_fit.resid)
+            threshold = train_residuals.mean() + (self.threshold_sigma * train_residuals.std())
+
+            # Detect anomalies
+            anomalies = residuals > threshold
+            is_anomalous = anomalies.any()
+
+            # Anomaly score (max residual / threshold)
+            anomaly_score = (residuals.max() / threshold) if threshold > 0 else 0.0
+
+            return AnomalyResult(
+                metric_name=col,
+                is_anomalous=is_anomalous,
+                anomaly_score=anomaly_score,
+                timestamps=test.index[anomalies].tolist() if is_anomalous else [],
+                threshold=threshold
+            )
+
+        except Exception:
+            # ARIMA can fail for certain series
+            return None
 
     def detect(self, metrics: pd.DataFrame, train_ratio: float = 0.7) -> List[AnomalyResult]:
         """
-        Detect anomalies using ARIMA residuals
+        Detect anomalies using ARIMA residuals (PARALLELIZED)
 
         Args:
             metrics: DataFrame with metrics
@@ -165,54 +240,14 @@ class ARIMAForecaster:
         Returns:
             List of AnomalyResult for each metric
         """
-        results = []
+        # Process metrics in parallel
+        results = Parallel(n_jobs=self.n_jobs, backend='loky')(
+            delayed(self._detect_single_metric)(col, metrics, train_ratio)
+            for col in metrics.columns
+        )
 
-        for col in metrics.columns:
-            series = metrics[col].dropna()
-
-            if len(series) < 50:  # Minimum length for ARIMA
-                continue
-
-            try:
-                # Split train/test
-                split_idx = int(len(series) * train_ratio)
-                train = series.iloc[:split_idx]
-                test = series.iloc[split_idx:]
-
-                # Fit ARIMA model
-                model = ARIMA(train, order=self.order)
-                model_fit = model.fit()
-
-                # Forecast test period
-                forecast = model_fit.forecast(steps=len(test))
-
-                # Calculate residuals
-                residuals = np.abs(test.values - forecast)
-
-                # Threshold based on training residuals
-                train_residuals = np.abs(model_fit.resid)
-                threshold = train_residuals.mean() + (self.threshold_sigma * train_residuals.std())
-
-                # Detect anomalies
-                anomalies = residuals > threshold
-                is_anomalous = anomalies.any()
-
-                # Anomaly score (max residual / threshold)
-                anomaly_score = (residuals.max() / threshold) if threshold > 0 else 0.0
-
-                results.append(AnomalyResult(
-                    metric_name=col,
-                    is_anomalous=is_anomalous,
-                    anomaly_score=anomaly_score,
-                    timestamps=test.index[anomalies].tolist() if is_anomalous else [],
-                    threshold=threshold
-                ))
-
-            except Exception as e:
-                # ARIMA can fail for certain series
-                continue
-
-        return results
+        # Filter out None results (errors or insufficient data)
+        return [r for r in results if r is not None]
 
     def rank_services(self, metrics: pd.DataFrame, service_mapping: Dict[str, str]) -> List[Tuple[str, float]]:
         """Rank services by ARIMA anomaly score"""
