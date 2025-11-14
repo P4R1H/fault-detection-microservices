@@ -135,7 +135,7 @@ def test_data_loading():
     print("✅ Data unloaded successfully")
 
     print("\n" + "=" * 80)
-    print("TEST 7: Load Train/Val/Test Splits (Lazy)")
+    print("TEST 7: Load Train/Val/Test Splits (Grouped - No Leakage)")
     print("=" * 80)
 
     try:
@@ -146,19 +146,37 @@ def test_data_loading():
         print(f"   Val:   {len(val)} cases ({len(val)/len(cases)*100:.1f}%)")
         print(f"   Test:  {len(test)} cases ({len(test)/len(cases)*100:.1f}%)")
 
-        # Verify no overlap
-        train_ids = set(c.case_id for c in train)
-        val_ids = set(c.case_id for c in val)
-        test_ids = set(c.case_id for c in test)
+        # Verify no scenario overlap (grouped splitting)
+        train_scenarios = set((c.system, c.root_cause_service, c.fault_type) for c in train)
+        val_scenarios = set((c.system, c.root_cause_service, c.fault_type) for c in val)
+        test_scenarios = set((c.system, c.root_cause_service, c.fault_type) for c in test)
 
-        if train_ids & val_ids or train_ids & test_ids or val_ids & test_ids:
-            print("❌ Data leakage detected: overlapping case IDs in splits!")
+        train_val_overlap = train_scenarios & val_scenarios
+        train_test_overlap = train_scenarios & test_scenarios
+        val_test_overlap = val_scenarios & test_scenarios
+
+        if train_val_overlap or train_test_overlap or val_test_overlap:
+            print("❌ SCENARIO LEAKAGE detected:")
+            if train_val_overlap:
+                print(f"   Train-Val overlap: {len(train_val_overlap)} scenarios")
+                print(f"   Example: {list(train_val_overlap)[:3]}")
+            if train_test_overlap:
+                print(f"   Train-Test overlap: {len(train_test_overlap)} scenarios")
+                print(f"   Example: {list(train_test_overlap)[:3]}")
+            if val_test_overlap:
+                print(f"   Val-Test overlap: {len(val_test_overlap)} scenarios")
+                print(f"   Example: {list(val_test_overlap)[:3]}")
             return False
         else:
-            print("✅ No data leakage: splits are disjoint")
+            print("✅ No scenario leakage: all scenarios are disjoint across splits")
+            print(f"   Train scenarios: {len(train_scenarios)}")
+            print(f"   Val scenarios: {len(val_scenarios)}")
+            print(f"   Test scenarios: {len(test_scenarios)}")
 
     except Exception as e:
         print(f"❌ Error creating splits: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
     print("\n" + "=" * 80)

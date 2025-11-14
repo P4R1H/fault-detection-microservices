@@ -425,7 +425,11 @@ class RCAEvalDataLoader:
         stratify_by: str = 'fault_type'
     ) -> Tuple[List[FailureCase], List[FailureCase], List[FailureCase]]:
         """
-        Load dataset with stratified train/val/test splits
+        Load dataset with GROUPED splits to prevent data leakage
+
+        CRITICAL: Uses scenario-based splitting to prevent leakage.
+        A scenario = (System, RootCauseService, FaultType).
+        All repetitions (runs) of the same scenario stay together in one split.
 
         Args:
             train_ratio: Proportion for training (default: 0.6)
@@ -442,122 +446,187 @@ class RCAEvalDataLoader:
             print("❌ No cases loaded - cannot create splits")
             return [], [], []
 
-        # Stratified split
+        # Use grouped splitting to prevent data leakage
+        return self._grouped_split(cases, train_ratio, val_ratio, random_seed, stratify_by)
+
+    def _group_by_scenario(self, cases: List[FailureCase]) -> Dict[Tuple[str, str, str], List[FailureCase]]:
+        """
+        Group cases by scenario to prevent data leakage
+
+        A scenario is defined by: (System, RootCauseService, FaultType)
+        All runs/repetitions of the same scenario are grouped together.
+
+        Example:
+          - ts-auth-service_cpu run 1, 2, 3 → all in same group
+          - Prevents run 1 in train, run 2 in test (data leakage)
+
+        Args:
+            cases: List of all failure cases
+
+        Returns:
+            Dict mapping scenario tuple to list of cases
+        """
+        scenarios = {}
+
+        for case in cases:
+            # Define scenario key
+            scenario_key = (case.system, case.root_cause_service, case.fault_type)
+
+            if scenario_key not in scenarios:
+                scenarios[scenario_key] = []
+
+            scenarios[scenario_key].append(case)
+
+        return scenarios
+
+    def _grouped_split(
+        self,
+        cases: List[FailureCase],
+        train_ratio: float,
+        val_ratio: float,
+        random_seed: int,
+        stratify_by: Optional[str] = None
+    ) -> Tuple[List[FailureCase], List[FailureCase], List[FailureCase]]:
+        """
+        Split dataset by scenarios (not individual cases) to prevent data leakage
+
+        Process:
+        1. Group cases by scenario (System, Service, Fault)
+        2. Split scenarios into train/val/test
+        3. Expand scenarios back to individual cases
+
+        Args:
+            cases: List of all failure cases
+            train_ratio: Proportion for training
+            val_ratio: Proportion for validation
+            random_seed: Random seed
+            stratify_by: Optional stratification ('fault_type', 'system', or None)
+
+        Returns:
+            (train_cases, val_cases, test_cases)
+        """
+        np.random.seed(random_seed)
+
+        # Group by scenario
+        scenarios = self._group_by_scenario(cases)
+        scenario_keys = list(scenarios.keys())
+
+        print(f"\n📊 Scenario-based splitting:")
+        print(f"   Total cases: {len(cases)}")
+        print(f"   Unique scenarios: {len(scenarios)}")
+        print(f"   Avg cases per scenario: {len(cases) / len(scenarios):.1f}")
+
         if stratify_by == 'fault_type':
-            return self._stratified_split_by_fault(cases, train_ratio, val_ratio, random_seed)
+            # Group scenarios by fault type
+            fault_scenarios = {}
+            for key in scenario_keys:
+                fault = key[2]  # (system, service, fault) -> fault
+                if fault not in fault_scenarios:
+                    fault_scenarios[fault] = []
+                fault_scenarios[fault].append(key)
+
+            train_scenarios, val_scenarios, test_scenarios = [], [], []
+
+            # Split each fault type's scenarios
+            for fault, fault_keys in fault_scenarios.items():
+                n_scenarios = len(fault_keys)
+                shuffled = np.random.permutation(fault_keys).tolist()
+
+                n_train = int(n_scenarios * train_ratio)
+                n_val = int(n_scenarios * val_ratio)
+
+                train_scenarios.extend(shuffled[:n_train])
+                val_scenarios.extend(shuffled[n_train:n_train+n_val])
+                test_scenarios.extend(shuffled[n_train+n_val:])
+
         elif stratify_by == 'system':
-            return self._stratified_split_by_system(cases, train_ratio, val_ratio, random_seed)
+            # Group scenarios by system
+            system_scenarios = {}
+            for key in scenario_keys:
+                system = key[0]  # (system, service, fault) -> system
+                if system not in system_scenarios:
+                    system_scenarios[system] = []
+                system_scenarios[system].append(key)
+
+            train_scenarios, val_scenarios, test_scenarios = [], [], []
+
+            # Split each system's scenarios
+            for system, sys_keys in system_scenarios.items():
+                n_scenarios = len(sys_keys)
+                shuffled = np.random.permutation(sys_keys).tolist()
+
+                n_train = int(n_scenarios * train_ratio)
+                n_val = int(n_scenarios * val_ratio)
+
+                train_scenarios.extend(shuffled[:n_train])
+                val_scenarios.extend(shuffled[n_train:n_train+n_val])
+                test_scenarios.extend(shuffled[n_train+n_val:])
+
         else:
-            return self._random_split(cases, train_ratio, val_ratio, random_seed)
+            # Random split of scenarios
+            shuffled_keys = np.random.permutation(scenario_keys).tolist()
 
-    def _random_split(
-        self,
-        cases: List[FailureCase],
-        train_ratio: float,
-        val_ratio: float,
-        random_seed: int
-    ) -> Tuple[List[FailureCase], List[FailureCase], List[FailureCase]]:
-        """Random split without stratification"""
-        np.random.seed(random_seed)
-        indices = np.random.permutation(len(cases))
+            n_train = int(len(scenario_keys) * train_ratio)
+            n_val = int(len(scenario_keys) * val_ratio)
 
-        n_train = int(len(cases) * train_ratio)
-        n_val = int(len(cases) * val_ratio)
+            train_scenarios = shuffled_keys[:n_train]
+            val_scenarios = shuffled_keys[n_train:n_train+n_val]
+            test_scenarios = shuffled_keys[n_train+n_val:]
 
-        train_idx = indices[:n_train]
-        val_idx = indices[n_train:n_train+n_val]
-        test_idx = indices[n_train+n_val:]
+        # Expand scenarios back to individual cases
+        train_cases = []
+        for scenario_key in train_scenarios:
+            train_cases.extend(scenarios[scenario_key])
 
-        train_cases = [cases[i] for i in train_idx]
-        val_cases = [cases[i] for i in val_idx]
-        test_cases = [cases[i] for i in test_idx]
+        val_cases = []
+        for scenario_key in val_scenarios:
+            val_cases.extend(scenarios[scenario_key])
 
-        self._print_split_stats(train_cases, val_cases, test_cases)
-        return train_cases, val_cases, test_cases
+        test_cases = []
+        for scenario_key in test_scenarios:
+            test_cases.extend(scenarios[scenario_key])
 
-    def _stratified_split_by_fault(
-        self,
-        cases: List[FailureCase],
-        train_ratio: float,
-        val_ratio: float,
-        random_seed: int
-    ) -> Tuple[List[FailureCase], List[FailureCase], List[FailureCase]]:
-        """Stratified split ensuring balanced fault types"""
-        np.random.seed(random_seed)
-
-        # Group by fault type
-        fault_groups = {}
-        for case in cases:
-            if case.fault_type not in fault_groups:
-                fault_groups[case.fault_type] = []
-            fault_groups[case.fault_type].append(case)
-
-        train_cases, val_cases, test_cases = [], [], []
-
-        # Split each fault type group
-        for fault_type, group_cases in fault_groups.items():
-            indices = np.random.permutation(len(group_cases))
-
-            n_train = int(len(group_cases) * train_ratio)
-            n_val = int(len(group_cases) * val_ratio)
-
-            train_idx = indices[:n_train]
-            val_idx = indices[n_train:n_train+n_val]
-            test_idx = indices[n_train+n_val:]
-
-            train_cases.extend([group_cases[i] for i in train_idx])
-            val_cases.extend([group_cases[i] for i in val_idx])
-            test_cases.extend([group_cases[i] for i in test_idx])
-
-        # Shuffle again to mix fault types
+        # Shuffle cases within each split
         np.random.shuffle(train_cases)
         np.random.shuffle(val_cases)
         np.random.shuffle(test_cases)
 
+        # Verify no leakage
+        self._verify_no_leakage(train_cases, val_cases, test_cases)
+
         self._print_split_stats(train_cases, val_cases, test_cases)
         return train_cases, val_cases, test_cases
 
-    def _stratified_split_by_system(
+    def _verify_no_leakage(
         self,
-        cases: List[FailureCase],
-        train_ratio: float,
-        val_ratio: float,
-        random_seed: int
-    ) -> Tuple[List[FailureCase], List[FailureCase], List[FailureCase]]:
-        """Stratified split ensuring balanced systems"""
-        np.random.seed(random_seed)
+        train_cases: List[FailureCase],
+        val_cases: List[FailureCase],
+        test_cases: List[FailureCase]
+    ):
+        """
+        Verify no data leakage between splits
 
-        # Group by system
-        system_groups = {}
-        for case in cases:
-            if case.system not in system_groups:
-                system_groups[case.system] = []
-            system_groups[case.system].append(case)
+        Checks that no scenario appears in multiple splits.
+        """
+        train_scenarios = set((c.system, c.root_cause_service, c.fault_type) for c in train_cases)
+        val_scenarios = set((c.system, c.root_cause_service, c.fault_type) for c in val_cases)
+        test_scenarios = set((c.system, c.root_cause_service, c.fault_type) for c in test_cases)
 
-        train_cases, val_cases, test_cases = [], [], []
+        # Check for overlaps
+        train_val_overlap = train_scenarios & val_scenarios
+        train_test_overlap = train_scenarios & test_scenarios
+        val_test_overlap = val_scenarios & test_scenarios
 
-        # Split each system group
-        for system, group_cases in system_groups.items():
-            indices = np.random.permutation(len(group_cases))
-
-            n_train = int(len(group_cases) * train_ratio)
-            n_val = int(len(group_cases) * val_ratio)
-
-            train_idx = indices[:n_train]
-            val_idx = indices[n_train:n_train+n_val]
-            test_idx = indices[n_train+n_val:]
-
-            train_cases.extend([group_cases[i] for i in train_idx])
-            val_cases.extend([group_cases[i] for i in val_idx])
-            test_cases.extend([group_cases[i] for i in test_idx])
-
-        # Shuffle again to mix systems
-        np.random.shuffle(train_cases)
-        np.random.shuffle(val_cases)
-        np.random.shuffle(test_cases)
-
-        self._print_split_stats(train_cases, val_cases, test_cases)
-        return train_cases, val_cases, test_cases
+        if train_val_overlap or train_test_overlap or val_test_overlap:
+            print("⚠️  WARNING: Scenario leakage detected!")
+            if train_val_overlap:
+                print(f"   Train-Val overlap: {len(train_val_overlap)} scenarios")
+            if train_test_overlap:
+                print(f"   Train-Test overlap: {len(train_test_overlap)} scenarios")
+            if val_test_overlap:
+                print(f"   Val-Test overlap: {len(val_test_overlap)} scenarios")
+        else:
+            print("✅ No scenario leakage: all scenarios are disjoint across splits")
 
     def _print_split_stats(
         self,
