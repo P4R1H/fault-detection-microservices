@@ -13,6 +13,37 @@ import torch.nn as nn
 from typing import List, Dict, Optional
 
 
+class DummyLogsEncoder(nn.Module):
+    """
+    Dummy logs encoder for testing without log parsing.
+
+    Returns a simple learned embedding for any log input.
+    Use this as a placeholder until full logs encoder is implemented.
+    """
+
+    def __init__(self, embedding_dim: int = 256):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        # Simple learnable embedding
+        self.embedding = nn.Parameter(torch.randn(1, embedding_dim))
+        self.projection = nn.Linear(embedding_dim, embedding_dim)
+
+    def forward(self, log_data=None) -> torch.Tensor:
+        """
+        Return a dummy embedding.
+
+        Args:
+            log_data: Ignored for now
+
+        Returns:
+            (batch, embedding_dim) dummy log representation
+        """
+        # Return the learnable embedding
+        batch_size = 1  # Default batch size
+        emb = self.embedding.expand(batch_size, -1)
+        return self.projection(emb)
+
+
 class LogsEncoder(nn.Module):
     """
     Log encoding pipeline.
@@ -24,50 +55,85 @@ class LogsEncoder(nn.Module):
     - Error pattern detection
 
     Reference: Drain3 library (>=0.9.11)
+
+    TODO: Full implementation in Phase 5-6
+    Currently uses DummyLogsEncoder for testing.
     """
 
     def __init__(
         self,
         embedding_dim: int = 256,
         embedding_method: str = 'tfidf',  # 'tfidf' or 'sentence-bert'
-        drain_config: Optional[Dict] = None
+        drain_config: Optional[Dict] = None,
+        use_dummy: bool = True  # Use dummy encoder for now
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
         self.embedding_method = embedding_method
+        self.use_dummy = use_dummy
 
-        # Drain3 configuration
-        self.drain_config = drain_config or {
-            'similarity_threshold': 0.5,  # 0.4-0.7 range
-            'depth': 4,                   # Tree depth
-            'max_children': 100           # Node capacity
-        }
-
-        # TODO: Initialize Drain3 parser
-        # TODO: Initialize embedding model
+        if use_dummy:
+            # Use dummy encoder for testing
+            self.dummy_encoder = DummyLogsEncoder(embedding_dim)
+        else:
+            # Drain3 configuration (not implemented yet)
+            self.drain_config = drain_config or {
+                'similarity_threshold': 0.5,  # 0.4-0.7 range
+                'depth': 4,                   # Tree depth
+                'max_children': 100           # Node capacity
+            }
+            # TODO: Initialize Drain3 parser
+            # TODO: Initialize embedding model
 
     def parse_logs(self, log_file: str) -> List[str]:
         """Parse logs to extract template IDs."""
+        if self.use_dummy:
+            return []
         # TODO: Implement Drain3 parsing
-        raise NotImplementedError("Phase 5 implementation")
+        raise NotImplementedError("Full logs encoder - Phase 5 implementation")
 
     def embed_templates(self, templates: List[str]) -> torch.Tensor:
         """Embed log templates."""
+        if self.use_dummy:
+            return self.dummy_encoder()
         # TODO: Implement template embedding
-        raise NotImplementedError("Phase 5 implementation")
+        raise NotImplementedError("Full logs encoder - Phase 5 implementation")
 
-    def forward(self, log_data: Dict) -> torch.Tensor:
+    def forward(self, log_data=None) -> torch.Tensor:
         """
         Encode log data.
 
         Args:
-            log_data: Dictionary with parsed log info
+            log_data: Dictionary with parsed log info (ignored if use_dummy=True)
 
         Returns:
             (batch, embedding_dim) encoded representation
         """
-        # TODO: Implement forward pass
-        raise NotImplementedError("Phase 5 implementation")
+        if self.use_dummy:
+            return self.dummy_encoder(log_data)
+
+        # TODO: Implement full forward pass
+        raise NotImplementedError("Full logs encoder - Phase 5 implementation")
+
+
+# Factory function
+def create_logs_encoder(
+    embedding_dim: int = 256,
+    use_dummy: bool = True,
+    **kwargs
+) -> nn.Module:
+    """
+    Create a logs encoder.
+
+    Args:
+        embedding_dim: Output embedding dimension
+        use_dummy: Use dummy encoder (True) or full encoder (False)
+        **kwargs: Additional arguments
+
+    Returns:
+        LogsEncoder instance
+    """
+    return LogsEncoder(embedding_dim=embedding_dim, use_dummy=use_dummy, **kwargs)
 
 
 # TODO: Add error pattern extraction

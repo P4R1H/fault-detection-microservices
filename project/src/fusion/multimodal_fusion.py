@@ -371,6 +371,24 @@ class ModalityDropout(nn.Module):
         if not self.training:
             return metrics, logs, traces
 
+        # Keep originals for potential restore
+        original_metrics = metrics
+        original_logs = logs
+        original_traces = traces
+
+        # Count available modalities
+        available = []
+        if metrics is not None:
+            available.append('metrics')
+        if logs is not None:
+            available.append('logs')
+        if traces is not None:
+            available.append('traces')
+
+        # If only one modality available, don't drop it
+        if len(available) <= 1:
+            return metrics, logs, traces
+
         # Randomly drop each modality
         if metrics is not None and torch.rand(1).item() < self.dropout_rate:
             metrics = None
@@ -383,14 +401,14 @@ class ModalityDropout(nn.Module):
 
         # Ensure at least one modality remains
         if metrics is None and logs is None and traces is None:
-            # Randomly re-enable one modality
-            choice = torch.randint(0, 3, (1,)).item()
-            if choice == 0:
-                metrics = metrics  # Would need to restore from original
-            elif choice == 1:
-                logs = logs
-            else:
-                traces = traces
+            # Randomly restore one of the originally available modalities
+            restore_choice = available[torch.randint(0, len(available), (1,)).item()]
+            if restore_choice == 'metrics':
+                metrics = original_metrics
+            elif restore_choice == 'logs':
+                logs = original_logs
+            elif restore_choice == 'traces':
+                traces = original_traces
 
         return metrics, logs, traces
 

@@ -44,22 +44,33 @@ class RCAModel(nn.Module):
         # Optional: Service embeddings for better representation
         if use_service_embedding:
             self.service_embedding = nn.Embedding(num_services, 64)
-            ranking_input_dim = fusion_dim + 64
+            # When using service embeddings, we score each service individually
+            # Input: (batch, fusion_dim + 64), Output: (batch, 1)
+            self.ranking_head = nn.Sequential(
+                nn.Linear(fusion_dim + 64, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.LayerNorm(hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 2, 1)  # Single score per service
+            )
         else:
-            ranking_input_dim = fusion_dim
-
-        # RCA ranking head
-        self.ranking_head = nn.Sequential(
-            nn.Linear(ranking_input_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.LayerNorm(hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, num_services)
-        )
+            # Without service embeddings, predict all services at once
+            # Input: (batch, fusion_dim), Output: (batch, num_services)
+            self.ranking_head = nn.Sequential(
+                nn.Linear(fusion_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.LayerNorm(hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 2, num_services)
+            )
 
     def forward(
         self,
