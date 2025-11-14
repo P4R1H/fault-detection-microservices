@@ -43,6 +43,7 @@ env/
 
 # Data files - DO NOT COMMIT DATASETS
 data/
+!project/src/data/  # Exception: keep source code in src/data/
 *.csv
 *.zip
 *.tar.gz
