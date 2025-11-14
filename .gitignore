@@ -50,13 +50,15 @@ data/
 *.pkl
 *.pickle
 
-# Model checkpoints and outputs
-models/
-checkpoints/
-outputs/
-runs/
-logs/
+# Model checkpoints and outputs (but not src/models/ source code)
+/models/
+/checkpoints/
+/outputs/
+/runs/
+/logs/
 *.pt
+*.pth
+*.ckpt
 *.pth
 *.ckpt
 *.safetensors
