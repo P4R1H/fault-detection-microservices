@@ -5,7 +5,20 @@ Implements PCMCI/PCMCIplus from tigramite library for
 time series causal discovery.
 """
 
-# Will be populated in Phase 7
-# from .pcmci import PCMCIDiscovery
+from .pcmci import (
+    PCMCIDiscovery,
+    GrangerLassoRCA,
+    discover_causal_relations,
+    visualize_causal_graph,
+    analyze_causal_paths,
+    compute_causal_strength
+)
 
-__all__ = []
+__all__ = [
+    'PCMCIDiscovery',
+    'GrangerLassoRCA',
+    'discover_causal_relations',
+    'visualize_causal_graph',
+    'analyze_causal_paths',
+    'compute_causal_strength'
+]

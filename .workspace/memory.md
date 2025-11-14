@@ -174,12 +174,50 @@
 ## 🧪 Testing Infrastructure (2025-11-14)
 
 ### Created Test Suite
-- **scripts/test_encoders.py**: Comprehensive validation
+- **scripts/test_encoders.py**: Comprehensive validation (394 lines)
   - Tests data loading (lazy loading, splits)
   - Tests preprocessing (normalization, windowing, graph construction)
-  - Tests all encoders (Chronos, TCN, GCN/GAT)
-  - Validates shapes, reports errors
-  - 200+ lines of test code
+  - Tests Chronos-Bolt-Tiny encoder (zero-shot)
+  - Tests TCN encoder (dilated convolutions)
+  - Tests GCN encoder (graph neural networks)
+  - Documentation: TESTING_ENCODERS.md
+
+- **scripts/test_pcmci.py**: PCMCI causal discovery testing (244 lines)
+  - Tests PCMCI algorithm with tigramite
+  - Tests service-level integration
+  - Tests Granger-Lasso baseline
+  - Generates causal graph visualizations
+  - Documentation: TESTING_PCMCI.md
+
+## 🔬 Phase 7: PCMCI Causal Discovery (2025-11-14) ✅
+
+### Implementation Complete
+- **src/causal/pcmci.py** (570 lines):
+  - `PCMCIDiscovery`: Full PCMCI wrapper with tigramite
+    - Two-stage algorithm (PC1 + MCI)
+    - Handles autocorrelation explicitly
+    - Outputs NetworkX DiGraph
+    - Service-level aggregation
+  - `GrangerLassoRCA`: Baseline for ablations
+    - Lasso regression with lagged features
+    - Faster but less powerful than PCMCI
+  - Helper functions:
+    - `discover_causal_relations()`: Convenience wrapper
+    - `visualize_causal_graph()`: Matplotlib visualization
+    - `analyze_causal_paths()`: Path finding
+    - `compute_causal_strength()`: Strength scoring
+
+### Key Features
+- **Causal Discovery**: PCMCI algorithm via tigramite
+- **Service Integration**: Metric-level → service-level aggregation
+- **Baseline**: Granger-Lasso for ablation studies
+- **Visualization**: NetworkX + matplotlib graph plots
+- **Testing**: Comprehensive test script with real data
+
+### Integration Points
+- Input: Preprocessed metrics from `MetricsPreprocessor`
+- Output: Causal graph (NetworkX DiGraph)
+- Service scores: Used for weighting in fusion module
 
 - **TESTING_ENCODERS.md**: Complete testing documentation
   - Installation instructions
