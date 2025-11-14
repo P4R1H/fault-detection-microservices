@@ -530,7 +530,9 @@ class RCAEvalDataLoader:
             # Split each fault type's scenarios
             for fault, fault_keys in fault_scenarios.items():
                 n_scenarios = len(fault_keys)
-                shuffled = np.random.permutation(fault_keys).tolist()
+                # Shuffle while preserving tuple type
+                indices = np.random.permutation(n_scenarios)
+                shuffled = [fault_keys[i] for i in indices]
 
                 n_train = int(n_scenarios * train_ratio)
                 n_val = int(n_scenarios * val_ratio)
@@ -553,7 +555,9 @@ class RCAEvalDataLoader:
             # Split each system's scenarios
             for system, sys_keys in system_scenarios.items():
                 n_scenarios = len(sys_keys)
-                shuffled = np.random.permutation(sys_keys).tolist()
+                # Shuffle while preserving tuple type
+                indices = np.random.permutation(n_scenarios)
+                shuffled = [sys_keys[i] for i in indices]
 
                 n_train = int(n_scenarios * train_ratio)
                 n_val = int(n_scenarios * val_ratio)
@@ -564,7 +568,9 @@ class RCAEvalDataLoader:
 
         else:
             # Random split of scenarios
-            shuffled_keys = np.random.permutation(scenario_keys).tolist()
+            # Shuffle while preserving tuple type
+            indices = np.random.permutation(len(scenario_keys))
+            shuffled_keys = [scenario_keys[i] for i in indices]
 
             n_train = int(len(scenario_keys) * train_ratio)
             n_val = int(len(scenario_keys) * val_ratio)
