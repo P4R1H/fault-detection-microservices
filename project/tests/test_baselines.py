@@ -72,9 +72,22 @@ def test_baselines():
         print(f"   Fault: {case.fault_type}")
         print(f"   Ground Truth: {case.root_cause_service}")
 
-        # Check if metrics available
+        # Check if metrics file exists
+        if not case.has_metrics():
+            print("   ⚠️  No metrics file - skipping")
+            continue
+
+        # LAZY LOAD: Load metrics data
+        try:
+            case.load_data(metrics=True, logs=False, traces=False)
+        except Exception as e:
+            print(f"   ⚠️  Error loading metrics: {e}")
+            continue
+
+        # Check if sufficient data
         if case.metrics is None or len(case.metrics) < 50:
-            print("   ⚠️  Insufficient metrics data - skipping")
+            print(f"   ⚠️  Insufficient metrics data ({len(case.metrics) if case.metrics is not None else 0} timesteps < 50) - skipping")
+            case.unload_data()  # Free memory
             continue
 
         # Extract metrics
@@ -135,6 +148,9 @@ def test_baselines():
             print(f"   Random: AC@1={metrics_result['AC@1']:.2f}, MRR={metrics_result['MRR']:.3f}")
         except Exception as e:
             print(f"   Random: ❌ Error - {e}")
+
+        # Unload data to free memory
+        case.unload_data()
 
     # Aggregate results
     print("\n" + "=" * 80)
