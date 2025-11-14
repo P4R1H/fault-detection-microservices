@@ -74,9 +74,6 @@ mlruns/
 .workspace/*.tmp
 .workspace/*.bak
 
-# Archive folder (development files, not for submission)
-.archive/
-
 # Cache
 .cache/
 *.log
