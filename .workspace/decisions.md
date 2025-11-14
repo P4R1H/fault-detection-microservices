@@ -305,3 +305,32 @@ All architectural and strategic decisions made during the project.
 ---
 
 **Keep this log updated for every significant decision!**
+
+## Strategic Decisions (User Confirmed - 2025-11-14)
+
+### D013: Novel Contribution ✅ DECIDED
+- **Date**: 2025-11-14
+- **Status**: ✅ Confirmed by user
+- **Decision**: Comprehensive SOTA Combination (Option C)
+- **Specifics**: Chronos + PCMCI + GCN with intermediate fusion
+- **Framing**: "First comprehensive integration of foundation models, causal discovery, and graph learning for multimodal microservice RCA"
+- **Impact**: HIGH - shapes report narrative as integration novelty, not algorithmic novelty
+
+### D016: Dataset Confirmed ✅ VERIFIED  
+- **Date**: 2025-11-14
+- **Status**: ✅ Exists locally
+- **Details**: 3 systems, 3 RE versions, 731 cases loaded
+
+### D017: Implementation Strategy ✅ DECIDED
+- **Date**: 2025-11-14  
+- **Status**: ✅ Confirmed (Option A - Incremental)
+- **Plan**: Metrics → +Logs → +Traces → Full fusion (4 evaluation cycles)
+
+### D018: Baselines ✅ DECIDED
+- **Date**: 2025-11-14
+- **Status**: ✅ Hybrid approach (Option C)
+- **Details**: Phase 2 baselines + 1-2 re-implementations + cite published
+
+### D019: Compute ✅ CONFIRMED
+- **Date**: 2025-11-14
+- **Status**: ✅ Can run 12-hour experiments, 3-5 seeds

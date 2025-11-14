@@ -8,7 +8,9 @@ Implements two approaches for ablation:
 
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple
+import torch.nn.functional as F
+from typing import Optional, Tuple, List
+import numpy as np
 
 
 class ChronosEncoder(nn.Module):
@@ -28,29 +30,133 @@ class ChronosEncoder(nn.Module):
     def __init__(
         self,
         model_name: str = "amazon/chronos-bolt-tiny",
+        context_length: int = 512,
+        prediction_length: int = 64,
         embedding_dim: int = 256,
-        freeze_backbone: bool = True
+        freeze_backbone: bool = True,
+        device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
     ):
         super().__init__()
         self.model_name = model_name
+        self.context_length = context_length
+        self.prediction_length = prediction_length
         self.embedding_dim = embedding_dim
         self.freeze_backbone = freeze_backbone
+        self.device = device
 
-        # TODO: Load Chronos model from HuggingFace
-        # self.chronos = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        # Load Chronos model
+        try:
+            from chronos import ChronosPipeline
+            self.chronos = ChronosPipeline.from_pretrained(
+                model_name,
+                device_map=device,
+                torch_dtype=torch.float32  # Use FP32 for stability
+            )
+
+            # Freeze backbone if specified
+            if freeze_backbone:
+                for param in self.chronos.model.parameters():
+                    param.requires_grad = False
+
+        except ImportError:
+            raise ImportError(
+                "chronos-forecasting not installed. "
+                "Install with: pip install chronos-forecasting>=1.0.0"
+            )
+
+        # Projection layer to get fixed embedding dimension
+        # Chronos outputs vary, so we add a projection
+        self.projection = nn.Linear(prediction_length, embedding_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Encode metrics time series.
 
         Args:
-            x: (batch, seq_len, features) metrics tensor
+            x: (batch, seq_len, n_features) metrics tensor
 
         Returns:
             (batch, embedding_dim) encoded representation
         """
-        # TODO: Implement forward pass
-        raise NotImplementedError("Phase 3 implementation")
+        batch_size, seq_len, n_features = x.shape
+
+        # Chronos expects (batch, seq_len) for each feature
+        # We'll encode each feature separately then aggregate
+        feature_embeddings = []
+
+        for feat_idx in range(n_features):
+            # Extract single feature: (batch, seq_len)
+            feature_data = x[:, :, feat_idx]
+
+            # Get Chronos forecast (uses last context_length points)
+            if seq_len > self.context_length:
+                context = feature_data[:, -self.context_length:]
+            else:
+                # Pad if needed
+                context = F.pad(feature_data, (self.context_length - seq_len, 0), value=0)
+
+            # Forward through Chronos (zero-shot forecast)
+            with torch.no_grad() if self.freeze_backbone else torch.enable_grad():
+                forecast = self.chronos.predict(
+                    context,
+                    prediction_length=self.prediction_length,
+                    num_samples=1  # Single deterministic forecast
+                )  # Returns (batch, prediction_length)
+
+            feature_embeddings.append(forecast.squeeze(1))  # (batch, prediction_length)
+
+        # Stack all feature forecasts: (batch, n_features, prediction_length)
+        all_forecasts = torch.stack(feature_embeddings, dim=1)
+
+        # Aggregate across features (mean pooling)
+        aggregated = all_forecasts.mean(dim=1)  # (batch, prediction_length)
+
+        # Project to embedding dimension
+        embedding = self.projection(aggregated)  # (batch, embedding_dim)
+
+        return embedding
+
+    def get_anomaly_score(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Compute anomaly score using reconstruction error.
+
+        Args:
+            x: (batch, seq_len, n_features) metrics tensor
+
+        Returns:
+            (batch,) anomaly scores
+        """
+        batch_size, seq_len, n_features = x.shape
+
+        reconstruction_errors = []
+
+        for feat_idx in range(n_features):
+            feature_data = x[:, :, feat_idx]
+
+            # Use first part as context, last part as target
+            split_point = seq_len - self.prediction_length
+            if split_point < self.context_length:
+                split_point = seq_len // 2
+
+            context = feature_data[:, :split_point]
+            target = feature_data[:, split_point:split_point+self.prediction_length]
+
+            # Forecast
+            with torch.no_grad():
+                forecast = self.chronos.predict(
+                    context,
+                    prediction_length=self.prediction_length,
+                    num_samples=1
+                ).squeeze(1)
+
+            # Compute MSE
+            mse = F.mse_loss(forecast, target, reduction='none').mean(dim=1)
+            reconstruction_errors.append(mse)
+
+        # Average across features
+        anomaly_score = torch.stack(reconstruction_errors, dim=1).mean(dim=1)
+
+        return anomaly_score
 
 
 class TCNEncoder(nn.Module):
@@ -83,10 +189,42 @@ class TCNEncoder(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.embedding_dim = embedding_dim
+        self.num_layers = num_layers
 
-        # TODO: Build TCN layers with dilated convolutions
+        # Build TCN layers with exponential dilation
+        self.tcn_layers = nn.ModuleList()
+
         # Dilation pattern: [1, 2, 4, 8, 16, 32, 64]
-        # Receptive field = kernel_size * (2^num_layers - 1)
+        dilations = [2**i for i in range(num_layers)]
+
+        # First layer: in_channels -> hidden_channels
+        self.tcn_layers.append(
+            TemporalBlock(
+                in_channels=in_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size,
+                dilation=dilations[0],
+                dropout=dropout
+            )
+        )
+
+        # Hidden layers: hidden_channels -> hidden_channels
+        for i in range(1, num_layers):
+            self.tcn_layers.append(
+                TemporalBlock(
+                    in_channels=hidden_channels,
+                    out_channels=hidden_channels,
+                    kernel_size=kernel_size,
+                    dilation=dilations[i],
+                    dropout=dropout
+                )
+            )
+
+        # Final projection to embedding dimension
+        self.projection = nn.Linear(hidden_channels, embedding_dim)
+
+        # Calculate receptive field
+        self.receptive_field = 1 + 2 * (kernel_size - 1) * sum(dilations)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -98,8 +236,20 @@ class TCNEncoder(nn.Module):
         Returns:
             (batch, embedding_dim) encoded representation
         """
-        # TODO: Implement TCN forward pass
-        raise NotImplementedError("Phase 4 implementation")
+        # TCN expects (batch, features, seq_len)
+        x = x.permute(0, 2, 1)  # (batch, features, seq_len)
+
+        # Forward through TCN layers
+        for tcn_layer in self.tcn_layers:
+            x = tcn_layer(x)  # (batch, hidden_channels, seq_len)
+
+        # Global average pooling across time
+        x = x.mean(dim=2)  # (batch, hidden_channels)
+
+        # Project to embedding dimension
+        embedding = self.projection(x)  # (batch, embedding_dim)
+
+        return embedding
 
 
 class TemporalBlock(nn.Module):
@@ -123,9 +273,127 @@ class TemporalBlock(nn.Module):
         dropout: float = 0.3
     ):
         super().__init__()
-        # TODO: Implement temporal block
-        pass
+
+        # Padding to maintain causality (no future leakage)
+        # Padding = (kernel_size - 1) * dilation
+        self.padding = (kernel_size - 1) * dilation
+
+        # Two convolutional layers in the block
+        self.conv1 = nn.Conv1d(
+            in_channels, out_channels, kernel_size,
+            padding=self.padding, dilation=dilation
+        )
+        self.conv2 = nn.Conv1d(
+            out_channels, out_channels, kernel_size,
+            padding=self.padding, dilation=dilation
+        )
+
+        # Weight normalization for stability
+        self.conv1 = nn.utils.weight_norm(self.conv1)
+        self.conv2 = nn.utils.weight_norm(self.conv2)
+
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+
+        # Residual connection (1x1 conv if dimensions don't match)
+        self.residual = nn.Conv1d(in_channels, out_channels, 1) \
+            if in_channels != out_channels else None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through temporal block.
+
+        Args:
+            x: (batch, in_channels, seq_len)
+
+        Returns:
+            (batch, out_channels, seq_len)
+        """
+        # Save input for residual
+        residual = x
+
+        # First conv block
+        out = self.conv1(x)
+        # Chomp padding (causal - remove right side)
+        out = out[:, :, :-self.padding] if self.padding > 0 else out
+        out = F.relu(out)
+        out = self.dropout1(out)
+
+        # Second conv block
+        out = self.conv2(out)
+        # Chomp padding
+        out = out[:, :, :-self.padding] if self.padding > 0 else out
+        out = F.relu(out)
+        out = self.dropout2(out)
+
+        # Residual connection
+        if self.residual is not None:
+            residual = self.residual(residual)
+
+        # Ensure same seq_len for residual addition
+        if residual.size(2) != out.size(2):
+            residual = residual[:, :, :out.size(2)]
+
+        return F.relu(out + residual)
 
 
-# TODO: Add TCN Autoencoder for unsupervised anomaly detection
-# TODO: Add evaluation utilities (inference time, memory usage)
+# Helper functions for metrics encoding
+
+def create_metrics_encoder(
+    encoder_type: str = 'chronos',
+    in_channels: int = 7,
+    embedding_dim: int = 256,
+    **kwargs
+) -> nn.Module:
+    """
+    Factory function to create metrics encoder.
+
+    Args:
+        encoder_type: 'chronos' or 'tcn'
+        in_channels: Number of input features
+        embedding_dim: Output embedding dimension
+        **kwargs: Additional arguments for specific encoder
+
+    Returns:
+        Configured encoder module
+    """
+    if encoder_type == 'chronos':
+        return ChronosEncoder(
+            embedding_dim=embedding_dim,
+            **kwargs
+        )
+    elif encoder_type == 'tcn':
+        return TCNEncoder(
+            in_channels=in_channels,
+            embedding_dim=embedding_dim,
+            **kwargs
+        )
+    else:
+        raise ValueError(f"Unknown encoder type: {encoder_type}. Use 'chronos' or 'tcn'.")
+
+
+def encode_metrics_batch(
+    metrics_batch: torch.Tensor,
+    encoder: nn.Module,
+    device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
+) -> torch.Tensor:
+    """
+    Encode a batch of metrics time series.
+
+    Args:
+        metrics_batch: (batch, seq_len, n_features) tensor
+        encoder: Metrics encoder module
+        device: Device to run on
+
+    Returns:
+        (batch, embedding_dim) embeddings
+    """
+    encoder = encoder.to(device)
+    encoder.eval()
+
+    metrics_batch = metrics_batch.to(device)
+
+    with torch.no_grad():
+        embeddings = encoder(metrics_batch)
+
+    return embeddings
