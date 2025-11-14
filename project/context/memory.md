@@ -161,22 +161,46 @@ From RCAEval and Literature:
 - Unreproducible results (no hyperparameters/seeds)
 - Data leakage
 
-## What I Still Need from User
+## User Confirmations (Received 2025-11-14)
 
-### Immediate Needs
-1. **Compute Resources**: GPU specs, VRAM available (assume 8GB based on research notes)
-2. **Timeline**: Exact deadline for final submission
-3. **Existing Phase 1 Code**: Location of current implementation (if reusing 88-dim features)
-4. **Preference Decisions**:
-   - Chronos-Bolt-Tiny (zero-shot, fast) OR TCN (trainable, more control)?
-   - Start with GCN or go directly to GAT?
-   - CatBoost for metrics or stick with upgraded approach?
+### Compute Resources ✅
+- **GPU**: RTX 4070 Mobile (80W, 8GB VRAM)
+- **CPU**: 16 cores / 22 threads
+- **RAM**: 16GB
+- **Assessment**: Sufficient for Chronos-Bolt-Tiny, TCN, GCN, PCMCI, Drain3, and full RCAEval pipeline
 
-### Clarifications Needed
-- Should I integrate existing Phase 1 feature engineering (88-dim)?
-- AWS CloudWatch integration required or optional?
-- Any preference for specific evaluation metrics (AC@k, Avg@k, MRR, NAB)?
-- Code documentation format (docstrings style, README format)?
+### Timeline ✅
+- **Deadline**: No strict constraints
+- **Pacing**: Optimize for correctness + report quality over speed
+- **Assessment**: Can be thorough with ablations and experiments
+
+### Phase 1 Code Status ✅
+- **Reality**: No real Phase 1 implementation exists - midsem results were illustrative
+- **Approach**: Build everything from ground up
+- **Framing**: Present as "Phase 2 improvement" showing architectural evolution
+- **Benefit**: Clean slate, no legacy code constraints
+
+### Model Implementation Priority ✅
+1. **Chronos-Bolt-Tiny FIRST**: Fast zero-shot baseline
+2. **TCN LATER**: For ablation comparison (keep in timeline and report)
+3. **GCN**: Start here (not GAT initially)
+
+### CloudWatch Integration ✅
+- **Status**: REQUIRED
+- **Data Source**: Synthetic/self-generated (not real AWS)
+- **Scope**: Show adapters + code structure
+- **Presentation**: "CloudWatch-compatible ingestion layer" in report
+
+### Documentation & Scope ✅
+- **Style**: No specific requirements - follow academic structure in /docs
+- **Priority 1 (MANDATORY)**:
+  - Comprehensive ablations (10-12 configurations minimum)
+  - 7+ baseline comparisons
+  - Professional visualizations (graphs, causal diagrams, architecture, service graphs, attention maps)
+- **Priority 2 (SECONDARY)**:
+  - Architectural sophistication
+  - Deep engineering details
+- **Primary Goal**: Results + report quality > over-engineering
 
 ### Implementation Timeline (4-6 Weeks Feasible)
 **Week 1**: Foundation

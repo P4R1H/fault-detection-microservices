@@ -1,0 +1,132 @@
+# AIOps Microservice RCA Project - Dependencies
+# Python 3.8+ required
+# GPU: RTX 4070 Mobile (8GB VRAM) with CUDA support
+
+# ============================================================================
+# CORE DEEP LEARNING
+# ============================================================================
+torch>=2.0.0,<3.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Graph Neural Networks
+torch-geometric>=2.3.0
+torch-scatter>=2.1.0
+torch-sparse>=0.6.17
+torch-cluster>=1.6.1
+torch-spline-conv>=1.2.2
+pyg-lib>=0.3.0
+
+# ============================================================================
+# RCA EVALUATION FRAMEWORK
+# ============================================================================
+RCAEval[default]>=1.0.0
+
+# ============================================================================
+# CAUSAL INFERENCE
+# ============================================================================
+tigramite>=5.2.0  # PCMCI causal discovery
+causal-learn>=0.1.3.0  # Granger-Lasso, PC algorithm
+networkx>=3.0  # Graph operations
+
+# ============================================================================
+# TIME SERIES & FOUNDATION MODELS
+# ============================================================================
+chronos-forecasting>=1.0.0  # Chronos-Bolt-Tiny
+transformers>=4.35.0  # Hugging Face models
+accelerate>=0.25.0  # Model optimization
+
+# ============================================================================
+# LOG PARSING
+# ============================================================================
+drain3>=0.9.11  # Drain log parser
+
+# ============================================================================
+# DATA PROCESSING
+# ============================================================================
+numpy>=1.24.0,<2.0.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# ============================================================================
+# BASELINE MODELS
+# ============================================================================
+catboost>=1.2  # CatBoost classifier
+statsmodels>=0.14.0  # ARIMA, statistical methods
+lightgbm>=4.0.0  # Gradient boosting baseline
+
+# ============================================================================
+# VISUALIZATION
+# ============================================================================
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.18.0
+graphviz>=0.20.1  # Graph visualization
+pygraphviz>=1.11  # NetworkX graph rendering
+pydot>=1.4.2
+
+# ============================================================================
+# MONITORING & CLOUD INTEGRATION
+# ============================================================================
+prometheus-client>=0.19.0
+opentelemetry-api>=1.21.0
+opentelemetry-sdk>=1.21.0
+boto3>=1.34.0  # AWS SDK (for CloudWatch adapters)
+botocore>=1.34.0
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
+tqdm>=4.66.0  # Progress bars
+pyyaml>=6.0.1  # Configuration files
+joblib>=1.3.0  # Parallel processing
+click>=8.1.0  # CLI interface
+python-dotenv>=1.0.0  # Environment variables
+loguru>=0.7.0  # Logging
+
+# ============================================================================
+# EXPERIMENTATION & TRACKING
+# ============================================================================
+tensorboard>=2.15.0
+wandb>=0.16.0  # Optional: Weights & Biases
+
+# ============================================================================
+# CODE QUALITY
+# ============================================================================
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.12.0
+pylint>=3.0.0
+mypy>=1.7.0
+
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
+jupyter>=1.0.0
+notebook>=7.0.0
+ipywidgets>=8.1.0
+sphinx>=7.2.0  # Optional: Documentation generation
+
+# ============================================================================
+# STATISTICAL TESTING
+# ============================================================================
+pingouin>=0.5.3  # Statistical tests (t-tests, Wilcoxon, etc.)
+
+# ============================================================================
+# OPTIONAL: INTERACTIVE DASHBOARDS
+# ============================================================================
+streamlit>=1.29.0  # Optional: Interactive visualizations
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# Install order:
+# 1. pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# 2. pip install torch-geometric torch-scatter torch-sparse torch-cluster torch-spline-conv pyg-lib -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+# 3. pip install -r requirements.txt
+#
+# For CPU-only (no GPU):
+# Remove CUDA-specific packages and install CPU versions
+#
+# CUDA Version: Ensure CUDA 11.8 or 12.1 is installed for RTX 4070

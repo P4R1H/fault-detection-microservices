@@ -47,21 +47,91 @@ This project implements a comprehensive multimodal AIOps system for microservice
 
 ## Quick Start
 
-**Note**: This project is currently in the initialization phase. Setup instructions will be added as implementation progresses.
-
 ### Prerequisites
-- Python 3.8+
-- CUDA-capable GPU (recommended)
-- Required libraries: PyTorch, tigramite, Drain3, PyG/DGL
+- **Python**: 3.8+ (tested with 3.11.14)
+- **GPU**: NVIDIA RTX 4070 Mobile (8GB VRAM) or equivalent
+- **CPU**: 16 cores / 22 threads recommended
+- **RAM**: 16GB minimum
+- **Disk**: ~10GB free space (dataset + models)
 
 ### Installation
+
+**Step 1: Clone Repository**
 ```bash
-# Installation instructions will be added
+git clone <repository-url>
+cd fault-detection-microservices/project
+```
+
+**Step 2: Install Dependencies**
+
+For GPU systems (recommended):
+```bash
+# Install PyTorch with CUDA 11.8
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Install PyTorch Geometric with CUDA
+pip install torch-geometric pyg-lib torch-scatter torch-sparse torch-cluster \
+    -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+
+# Install remaining dependencies
+pip install -r requirements.txt
+```
+
+For CPU-only systems (development):
+```bash
+pip install -r requirements.txt
+```
+
+**Step 3: Download RCAEval Dataset**
+```bash
+# Download TrainTicket dataset (~1.5GB)
+python scripts/download_dataset.py
+
+# Or download all three systems (~4.2GB)
+python scripts/download_dataset.py --all
+```
+
+This downloads from Zenodo (DOI: 10.5281/zenodo.14590730):
+- 270 multimodal failure cases (90 per system)
+- Metrics, logs, and traces with ground truth labels
+- Systems: TrainTicket, SockShop, Online Boutique
+
+**Step 4: Verify Installation**
+```bash
+python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
+python -c "from src.utils.data_loader import RCAEvalDataLoader; print('✅ Data loader ready')"
 ```
 
 ### Usage
+
+**Load Dataset**:
+```python
+from src.utils.data_loader import RCAEvalDataLoader
+
+# Initialize loader
+loader = RCAEvalDataLoader('project/data/RCAEval')
+
+# Get train/val/test splits (162/54/54)
+train, val, test = loader.load_splits()
+
+# Access a failure case
+case = train[0]
+print(f"System: {case.system}")
+print(f"Fault Type: {case.fault_type}")
+print(f"Root Cause: {case.root_cause_service}")
+print(f"Metrics shape: {case.metrics.shape}")
+```
+
+**Run Experiments** (Coming soon):
 ```bash
-# Usage instructions will be added
+# Baseline experiments
+python experiments/run_baselines.py
+
+# Full multimodal system
+python experiments/run_full_system.py --config configs/default.yaml
+
+# Ablation studies
+python experiments/run_ablations.py
 ```
 
 ## Dataset
