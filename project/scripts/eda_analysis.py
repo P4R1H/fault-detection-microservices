@@ -20,6 +20,8 @@ import seaborn as sns
 from typing import Dict, List, Tuple
 from collections import Counter
 import argparse
+from joblib import Parallel, delayed
+from tqdm import tqdm
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -121,8 +123,20 @@ class RCAEvalEDA:
         # Save distribution plots
         self._plot_distributions(system_dist, fault_dist, rc_dist)
 
+    def _load_metrics_sample(self, case: FailureCase) -> Tuple[int, int, pd.DataFrame]:
+        """Helper: Load metrics for a single case (for parallelization)"""
+        case.load_data(metrics=True, logs=False, traces=False)
+        if case.metrics is not None:
+            n_features = len(case.metrics.columns)
+            n_timesteps = len(case.metrics)
+            df = case.metrics.copy()
+            case.unload_data()
+            return (n_features, n_timesteps, df)
+        case.unload_data()
+        return (0, 0, None)
+
     def analyze_metrics_modality(self, cases: List[FailureCase]):
-        """Analyze metrics modality characteristics (LAZY LOADING)"""
+        """Analyze metrics modality characteristics (PARALLELIZED)"""
         print("\n" + "=" * 80)
         print("2. Metrics Modality Analysis")
         print("=" * 80)
@@ -136,31 +150,33 @@ class RCAEvalEDA:
 
         print(f"\n📈 Analyzing {len(metrics_cases)} cases with metrics")
 
-        # Load a sample (first 10) to analyze dimensionality
+        # Load samples in parallel (first 10)
         sample_cases = metrics_cases[:10]
-        feature_counts = []
-        timestep_counts = []
 
-        for case in sample_cases:
-            case.load_data(metrics=True, logs=False, traces=False)
-            if case.metrics is not None:
-                feature_counts.append(len(case.metrics.columns))
-                timestep_counts.append(len(case.metrics))
-            case.unload_data()
+        print(f"\n⚡ Loading {len(sample_cases)} sample cases in parallel...")
+
+        # Parallel loading with progress bar
+        results = Parallel(n_jobs=-1, backend='loky')(
+            delayed(self._load_metrics_sample)(case)
+            for case in tqdm(sample_cases, desc="Loading metrics samples")
+        )
+
+        # Extract dimensions and dataframes
+        feature_counts = [n_feat for n_feat, n_time, df in results if n_feat > 0]
+        timestep_counts = [n_time for n_feat, n_time, df in results if n_time > 0]
+        sample_dfs = [df for n_feat, n_time, df in results if df is not None]
 
         if feature_counts:
-            print(f"\n🔢 Dimensionality (sampled from {len(sample_cases)} cases):")
+            print(f"\n🔢 Dimensionality (sampled {len(feature_counts)} cases):")
             print(f"   Features per case:")
             print(f"      Min: {min(feature_counts)}, Max: {max(feature_counts)}, Median: {np.median(feature_counts):.0f}")
             print(f"   Timesteps per case:")
             print(f"      Min: {min(timestep_counts)}, Max: {max(timestep_counts)}, Median: {np.median(timestep_counts):.0f}")
 
-        # Sample case analysis
-        sample_case = metrics_cases[0]
-        sample_case.load_data(metrics=True, logs=False, traces=False)
-        if sample_case.metrics is not None:
-            df = sample_case.metrics
-            print(f"\n📊 Sample Case ({sample_case.case_id}):")
+        # Sample case analysis (use first loaded sample)
+        if sample_dfs:
+            df = sample_dfs[0]
+            print(f"\n📊 Sample Case ({sample_cases[0].case_id}):")
             print(f"   Shape: {df.shape}")
             print(f"   Columns: {list(df.columns)[:5]}... (showing first 5)")
 
@@ -169,13 +185,23 @@ class RCAEvalEDA:
             print(f"   Missing values: {df.isnull().sum().sum()} ({df.isnull().sum().sum() / df.size * 100:.2f}%)")
             print(f"   Mean: {df.mean().mean():.4f}")
             print(f"   Std: {df.std().mean():.4f}")
-        sample_case.unload_data()
 
-        # Save metrics analysis (load cases one by one)
+        # Save metrics analysis (parallelized)
         self._save_metrics_statistics(metrics_cases)
 
+    def _load_logs_sample(self, case: FailureCase, max_rows: int = 10000) -> Tuple[int, pd.DataFrame]:
+        """Helper: Load logs for a single case with row limit (for parallelization)"""
+        case.load_data(metrics=False, logs=True, traces=False, max_rows_logs=max_rows)
+        if case.logs is not None:
+            count = len(case.logs)
+            df = case.logs.copy()
+            case.unload_data()
+            return (count, df)
+        case.unload_data()
+        return (0, None)
+
     def analyze_logs_modality(self, cases: List[FailureCase]):
-        """Analyze logs modality characteristics (LAZY LOADING)"""
+        """Analyze logs modality characteristics (PARALLELIZED + ROW LIMITS)"""
         print("\n" + "=" * 80)
         print("3. Logs Modality Analysis")
         print("=" * 80)
@@ -189,31 +215,35 @@ class RCAEvalEDA:
 
         print(f"\n📝 Analyzing {len(logs_cases)} cases with logs")
 
-        # Load a sample (first 10) to analyze volume
+        # Load samples in parallel (first 10, limited to 10k rows each for speed)
         sample_cases = logs_cases[:min(10, len(logs_cases))]
-        log_counts = []
+        MAX_LOG_ROWS = 10000  # Only load first 10k rows for analysis
 
-        for case in sample_cases:
-            case.load_data(metrics=False, logs=True, traces=False)
-            if case.logs is not None:
-                log_counts.append(len(case.logs))
-            case.unload_data()
+        print(f"\n⚡ Loading {len(sample_cases)} sample cases in parallel (first {MAX_LOG_ROWS:,} rows each)...")
+
+        # Parallel loading with progress bar
+        results = Parallel(n_jobs=-1, backend='loky')(
+            delayed(self._load_logs_sample)(case, MAX_LOG_ROWS)
+            for case in tqdm(sample_cases, desc="Loading logs samples")
+        )
+
+        # Extract counts and dataframes
+        log_counts = [count for count, df in results if count > 0]
+        sample_dfs = [df for count, df in results if df is not None]
 
         if log_counts:
-            print(f"\n📊 Log Volume (sampled from {len(sample_cases)} cases):")
+            print(f"\n📊 Log Volume (sampled {len(log_counts)} cases, first {MAX_LOG_ROWS:,} rows each):")
             print(f"   Logs per case:")
             print(f"      Min: {min(log_counts):,}")
             print(f"      Max: {max(log_counts):,}")
             print(f"      Median: {np.median(log_counts):,.0f}")
             print(f"      Mean: {np.mean(log_counts):,.0f}")
 
-        # Sample case analysis
-        sample_case = logs_cases[0]
-        sample_case.load_data(metrics=False, logs=True, traces=False)
-        if sample_case.logs is not None:
-            df = sample_case.logs
-            print(f"\n📄 Sample Case ({sample_case.case_id}):")
-            print(f"   Log entries: {len(df):,}")
+        # Sample case analysis (use first loaded sample)
+        if sample_dfs:
+            df = sample_dfs[0]
+            print(f"\n📄 Sample Case ({sample_cases[0].case_id}):")
+            print(f"   Log entries (sample): {len(df):,}")
             print(f"   Columns: {list(df.columns)}")
 
             # Check for common log fields
@@ -222,10 +252,20 @@ class RCAEvalEDA:
                 print(f"\n🔍 Log Level Distribution:")
                 for level, count in sorted(level_dist.items(), key=lambda x: x[1], reverse=True):
                     print(f"      {level}: {count:,} ({count/len(df)*100:.1f}%)")
-        sample_case.unload_data()
+
+    def _load_traces_sample(self, case: FailureCase, max_rows: int = 50000) -> Tuple[int, pd.DataFrame]:
+        """Helper: Load traces for a single case with row limit (for parallelization)"""
+        case.load_data(metrics=False, logs=False, traces=True, max_rows_traces=max_rows)
+        if case.traces is not None:
+            count = len(case.traces)
+            df = case.traces.copy()
+            case.unload_data()
+            return (count, df)
+        case.unload_data()
+        return (0, None)
 
     def analyze_traces_modality(self, cases: List[FailureCase]):
-        """Analyze traces modality characteristics (LAZY LOADING)"""
+        """Analyze traces modality characteristics (PARALLELIZED + ROW LIMITS)"""
         print("\n" + "=" * 80)
         print("4. Traces Modality Analysis")
         print("=" * 80)
@@ -239,31 +279,35 @@ class RCAEvalEDA:
 
         print(f"\n🔗 Analyzing {len(traces_cases)} cases with traces")
 
-        # Load a sample (first 10) to analyze volume
+        # Load samples in parallel (first 10, limited to 50k rows each for speed)
         sample_cases = traces_cases[:min(10, len(traces_cases))]
-        trace_counts = []
+        MAX_TRACE_ROWS = 50000  # Only load first 50k spans for analysis
 
-        for case in sample_cases:
-            case.load_data(metrics=False, logs=False, traces=True)
-            if case.traces is not None:
-                trace_counts.append(len(case.traces))
-            case.unload_data()
+        print(f"\n⚡ Loading {len(sample_cases)} sample cases in parallel (first {MAX_TRACE_ROWS:,} rows each)...")
+
+        # Parallel loading with progress bar
+        results = Parallel(n_jobs=-1, backend='loky')(
+            delayed(self._load_traces_sample)(case, MAX_TRACE_ROWS)
+            for case in tqdm(sample_cases, desc="Loading traces samples")
+        )
+
+        # Extract counts and dataframes
+        trace_counts = [count for count, df in results if count > 0]
+        sample_dfs = [df for count, df in results if df is not None]
 
         if trace_counts:
-            print(f"\n📊 Trace Volume (sampled from {len(sample_cases)} cases):")
+            print(f"\n📊 Trace Volume (sampled {len(trace_counts)} cases, first {MAX_TRACE_ROWS:,} rows each):")
             print(f"   Spans per case:")
             print(f"      Min: {min(trace_counts):,}")
             print(f"      Max: {max(trace_counts):,}")
             print(f"      Median: {np.median(trace_counts):,.0f}")
             print(f"      Mean: {np.mean(trace_counts):,.0f}")
 
-        # Sample case analysis
-        sample_case = traces_cases[0]
-        sample_case.load_data(metrics=False, logs=False, traces=True)
-        if sample_case.traces is not None:
-            df = sample_case.traces
-            print(f"\n🔍 Sample Case ({sample_case.case_id}):")
-            print(f"   Trace spans: {len(df):,}")
+        # Sample case analysis (use first loaded sample)
+        if sample_dfs:
+            df = sample_dfs[0]
+            print(f"\n🔍 Sample Case ({sample_cases[0].case_id}):")
+            print(f"   Trace spans (sample): {len(df):,}")
             print(f"   Columns: {list(df.columns)}")
 
             # Service graph analysis
@@ -272,7 +316,6 @@ class RCAEvalEDA:
                 print(f"\n🏢 Services in trace:")
                 print(f"      Unique services: {len(services)}")
                 print(f"      Top services: {list(services)[:5]}")
-        sample_case.unload_data()
 
     def analyze_cross_modality_patterns(self, cases: List[FailureCase]):
         """Analyze patterns across modalities"""
@@ -372,28 +415,49 @@ class RCAEvalEDA:
 
         print(f"\n💾 Saved distribution plots to: {self.output_dir / 'dataset_distributions.png'}")
 
+    def _get_metrics_stats(self, case: FailureCase) -> Tuple[str, Tuple, List, str]:
+        """Helper: Get statistics for a single metrics case (for parallelization)"""
+        case.load_data(metrics=True, logs=False, traces=False)
+        if case.metrics is not None:
+            df = case.metrics
+            stats = (
+                case.case_id,
+                df.shape,
+                list(df.columns),
+                df.describe().to_string()
+            )
+            case.unload_data()
+            return stats
+        case.unload_data()
+        return None
+
     def _save_metrics_statistics(self, metrics_cases: List[FailureCase]):
-        """Save detailed metrics statistics (LAZY LOADING)"""
+        """Save detailed metrics statistics (PARALLELIZED)"""
         stats_file = self.output_dir / 'metrics_statistics.txt'
 
+        # Load first 5 cases in parallel
+        sample_cases = metrics_cases[:5]
+
+        print(f"\n⚡ Generating statistics for {len(sample_cases)} cases in parallel...")
+
+        results = Parallel(n_jobs=-1, backend='loky')(
+            delayed(self._get_metrics_stats)(case)
+            for case in tqdm(sample_cases, desc="Computing statistics")
+        )
+
+        # Write results to file
         with open(stats_file, 'w') as f:
             f.write("Metrics Modality Statistics\n")
             f.write("=" * 80 + "\n\n")
 
-            for i, case in enumerate(metrics_cases[:5]):  # First 5 cases
-                # Load data
-                case.load_data(metrics=True, logs=False, traces=False)
-
-                if case.metrics is not None:
-                    df = case.metrics
-                    f.write(f"Case {i+1}: {case.case_id}\n")
-                    f.write(f"  Shape: {df.shape}\n")
-                    f.write(f"  Columns: {list(df.columns)}\n")
+            for i, stats in enumerate(results):
+                if stats is not None:
+                    case_id, shape, columns, describe_str = stats
+                    f.write(f"Case {i+1}: {case_id}\n")
+                    f.write(f"  Shape: {shape}\n")
+                    f.write(f"  Columns: {columns}\n")
                     f.write(f"  Summary statistics:\n")
-                    f.write(f"{df.describe()}\n\n")
-
-                # Unload data to free memory
-                case.unload_data()
+                    f.write(f"{describe_str}\n\n")
 
         print(f"💾 Saved metrics statistics to: {stats_file}")
 

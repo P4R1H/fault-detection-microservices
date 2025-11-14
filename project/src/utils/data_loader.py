@@ -56,7 +56,9 @@ class FailureCase:
         metrics: bool = True,
         logs: bool = True,
         traces: bool = True,
-        verbose: bool = False
+        verbose: bool = False,
+        max_rows_logs: Optional[int] = None,
+        max_rows_traces: Optional[int] = None
     ) -> 'FailureCase':
         """
         Load data from CSV files into memory (LAZY LOADING)
@@ -66,6 +68,8 @@ class FailureCase:
             logs: Load logs.csv
             traces: Load traces.csv
             verbose: Print loading progress
+            max_rows_logs: Maximum rows to load from logs (None = all rows)
+            max_rows_traces: Maximum rows to load from traces (None = all rows)
 
         Returns:
             Self (for chaining)
@@ -83,20 +87,20 @@ class FailureCase:
                 if verbose:
                     print(f"  ❌ Metrics error: {e}")
 
-        # Load logs
+        # Load logs (with optional row limit for performance)
         if logs and self.logs_path is not None and self.logs is None:
             try:
-                self.logs = pd.read_csv(self.logs_path)
+                self.logs = pd.read_csv(self.logs_path, nrows=max_rows_logs)
                 if verbose:
                     print(f"  ✅ Logs: {len(self.logs)} entries")
             except Exception as e:
                 if verbose:
                     print(f"  ❌ Logs error: {e}")
 
-        # Load traces
+        # Load traces (with optional row limit for performance)
         if traces and self.traces_path is not None and self.traces is None:
             try:
-                self.traces = pd.read_csv(self.traces_path)
+                self.traces = pd.read_csv(self.traces_path, nrows=max_rows_traces)
                 if verbose:
                     print(f"  ✅ Traces: {len(self.traces)} spans")
             except Exception as e:
